@@ -1,39 +1,41 @@
-# API reference — index
+# SanMar SME API docs index
 
-These docs are this SME's operator manual. The agent is instructed (in
-its role's `system_prompt.md` and `playbook_template.md`) to open the
-matching page **before** calling any tool. Keep them short, concrete,
-and code-sample-heavy — the audience is the LLM, not humans.
+This directory contains runtime documentation for the **Class 2 SanMar SME agent**.
 
-## What goes in here
+The SME must read the relevant page before tool execution. These docs are written for LLM/tooling correctness (not end-user marketing prose).
 
-One markdown file per logical surface area of the upstream SaaS:
+## Core markdown docs
 
-| Page | Covers |
-| --- | --- |
-| `auth_and_patterns.md` | Base URL, auth header, pagination, error shape, anything that applies across endpoints |
-| `<domain>.md` | Per-domain reference — one file per upstream module the SME exposes (e.g. `customers.md`, `invoices.md`, `webhooks.md`) |
+- `auth_and_patterns.md` — cross-cutting onboarding, auth, endpoint, transport, and error patterns.
+- `web_services.md` — SanMar SOAP web-services operations and response normalization guidance.
+- `ftp_feeds.md` — FTP feed families, file conventions, join keys, and cadence expectations.
+- `purchase_orders.md` — PO submission/validation workflow and operational safeguards.
 
-For sme-odoo this index ended up as `auth_and_patterns.md`,
-`mrp_batches.md`, `stock_moves.md`, `invoices.md` — pattern your repo
-the same way: one cross-cutting page plus one page per domain module
-under `sme_tools/`.
+## Source PDFs retained for traceability
 
-## Style guide
+- `SanMarWebServicesIntegrationGuide-v16.10.pdf`
+- `SanMar-FTP-Integration-Guide-v23.1.pdf`
+- `SanMar-FTP-Integration-Guide-v18 (4).pdf`
+- `SanMar-Purchase-Order-Integration-Guide-24.1.pdf`
 
-- **Audience: the LLM.** Skip exposition; give it the facts it needs to
-  call the API correctly on the first try.
-- **Code samples > prose.** Show the request shape, the response shape,
-  and one realistic example.
-- **Document gotchas.** Pagination quirks, timezone defaults, state-name
-  mismatches, soft-delete semantics — anything that has burned you once
-  belongs here.
-- **Don't document the tool layer.** The agent reads `sme_tools/*` source
-  directly; these docs are for the underlying API.
+## Authoring standard for future updates
 
-## Updating
+When new SanMar behavior is discovered:
 
-Whenever you (or the agent) learn a new gotcha that isn't covered, push
-it as an edit to the relevant page. The agent's playbook is a *runtime*
-scratchpad and resets on redeploy; these docs ship from the image and
-are the durable source of truth.
+1. Update the closest topical markdown file above.
+2. Prefer concrete field names, operation names, and payload examples.
+3. Document edge cases that can cause bad writes or silent data drift.
+4. Keep this index aligned if a new domain markdown file is added.
+
+
+## Tool usage linkage
+
+The agent tool entrypoints are in `sme_tools/example/tools.py`. Common action mapping:
+
+- Product queries -> `query_products`
+- Inventory checks -> `check_inventory`
+- Pricing checks -> `check_pricing`
+- PO submission -> `submit_purchase_order`
+- Order status -> `get_order_status`
+- Shipping status -> `get_shipping_status`
+- Tracking -> `get_tracking`

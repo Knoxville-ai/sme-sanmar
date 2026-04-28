@@ -1,9 +1,7 @@
-"""Example SME domain code.
+"""SanMar SME domain code.
 
-Rename this package to match your SaaS (e.g. ``sme_tools/salesforce/``)
-and re-export the client + error classes you actually use. Public class
-names and method signatures should be held stable across releases so
-callers never break on a rebuild.
+This package exposes the client and error classes used by
+`sme_tools.example.tools`.
 """
 
 from sme_tools.example.client import (

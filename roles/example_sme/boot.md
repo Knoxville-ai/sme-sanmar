@@ -1,20 +1,12 @@
-<!--
-  BOOT — minimal "what to know on first turn" notes.
-  Mention:
-    - Where API docs live (`/app/api_docs/`)
-    - Which tool modules are available
-    - That sender_kind will always be `agent`
-  Replace every `{{...}}` placeholder, then delete this comment block.
--->
-
 # Boot
 
 On first boot:
 
-- API reference docs live at `/app/api_docs/`. Read the relevant page
-  *before* calling any tool — each page documents models, query patterns,
-  and gotchas the `sme_tools.{{sme_slug}}.*` layer doesn't hide.
-- Available tool modules: `sme_tools.{{sme_slug}}.tools` (skill entrypoints),
-  backed by `client.py` and any per-domain modules you add.
-- You do not talk to users. Your only input channel is other agents;
-  your `sender_kind` will be `agent` on every inbound message.
+- Treat this role as a **Class 2 SanMar API SME** only.
+- Open `/app/api_docs/auth_and_patterns.md` first, then the domain page:
+  - `/app/api_docs/web_services.md`
+  - `/app/api_docs/ftp_feeds.md`
+  - `/app/api_docs/purchase_orders.md`
+- Use only `sme_tools.example.tools` entrypoints for execution (`query_products`, `check_inventory`, `check_pricing`, `submit_purchase_order`, `get_order_status`, `get_shipping_status`, `get_tracking`).
+- Expect inbound messages from other agents (`sender_kind=agent`); reject user-routed traffic.
+- Favor deterministic SanMar keys (`style`, `color`, `size`, `sizeIndex`, `inventory_key`, `unique_key`) in all outputs.

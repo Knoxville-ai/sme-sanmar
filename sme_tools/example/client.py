@@ -1,17 +1,13 @@
-"""HTTP client skeleton for the Example SME.
+"""SanMar-focused HTTP client used by the SME tool layer.
 
-Replace ``Example`` with your SaaS name everywhere. The pattern below is
-the contract every Class 2 SME's domain client should follow:
+This client intentionally keeps endpoint interactions thin and predictable
+for LLM-driven tool calls. Methods map to common integration actions:
 
-  - Constructor takes credentials + a ``dry_run`` flag.
-  - Optional ``agent_role`` / ``agent_uid`` headers ride along on every
-    request so the upstream API can audit which agent acted.
-  - Two error classes: ``*ConnectionError`` for transport failures and
-    ``*APIError`` for non-2xx responses.
-  - A ``_request`` helper centralises retries, error parsing, and the
-    dry-run short-circuit.
-  - A module-level ``*_client_from_env()`` factory reads the env vars
-    that the deploy manifest sets at container start.
+- product queries
+- inventory checks
+- pricing checks
+- purchase order submit
+- order/tracking/shipping status lookup
 """
 
 from __future__ import annotations
@@ -35,11 +31,11 @@ class ExampleAPIError(RuntimeError):
     def __init__(self, status: int, body: str) -> None:
         self.status = status
         self.body = body
-        super().__init__(f"Example API error {status}: {body[:300]}")
+        super().__init__(f"SanMar API error {status}: {body[:300]}")
 
 
 class ExampleClient:
-    """HTTP client for the Example SaaS API."""
+    """HTTP client for the SanMar SME integration surface."""
 
     def __init__(
         self,
@@ -53,7 +49,7 @@ class ExampleClient:
     ) -> None:
         if not base_url or not api_key:
             raise ExampleConnectionError(
-                "Example SME not configured. Set EXAMPLE_URL and EXAMPLE_API_KEY env vars."
+                "SanMar SME not configured. Set EXAMPLE_URL and EXAMPLE_API_KEY env vars."
             )
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
@@ -63,14 +59,10 @@ class ExampleClient:
         self._timeout = timeout
         self._session = requests.Session()
         headers = {
-            # Most SaaS APIs use either Bearer or a custom header. Pick
-            # whichever is correct for your upstream and delete the other.
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        # Identity headers: harmless when the upstream doesn't enforce
-        # them, required when it does. Send them unconditionally.
         if self._agent_role:
             headers["X-Agent-Role"] = self._agent_role
         if self._agent_uid:
@@ -80,8 +72,6 @@ class ExampleClient:
     @property
     def dry_run(self) -> bool:
         return self._dry_run
-
-    # ── generic request ───────────────────────────────
 
     def _request(
         self,
@@ -95,7 +85,13 @@ class ExampleClient:
 
         if self._dry_run and method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
             logger.info("[DRY RUN] %s %s body=%s", method.upper(), url, json_body)
-            return {"dry_run": True}
+            return {
+                "dry_run": True,
+                "method": method.upper(),
+                "path": path,
+                "params": params,
+                "json_body": json_body,
+            }
 
         try:
             resp = self._session.request(
@@ -114,46 +110,150 @@ class ExampleClient:
         if not resp.ok:
             try:
                 body = resp.json()
-                err_msg = body.get("error", resp.text)
+                err_msg = body.get("error") or body.get("message") or resp.text
             except ValueError:
                 err_msg = resp.text
             raise ExampleAPIError(resp.status_code, err_msg)
 
+        if not resp.text.strip():
+            return {"status": "ok"}
+
         try:
-            return resp.json()
-        except ValueError:
+            payload = resp.json()
+        except ValueError as exc:
             raise ExampleAPIError(
                 resp.status_code, f"Non-JSON response: {resp.text[:200]}"
-            )
+            ) from exc
 
-    # ── domain methods ───────────────────────────────────
-    #
-    # Add one method per upstream endpoint your tools.py needs. Keep them
-    # thin: parse args, call _request, return a typed dict / dataclass.
+        if isinstance(payload, dict):
+            return payload
+        return {"items": payload}
 
-    def ping(self) -> dict[str, Any]:
-        """Simple connectivity check — replace with a real endpoint."""
-        return self._request("GET", "/ping")
+    @staticmethod
+    def _compact_params(raw: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in raw.items() if v is not None and v != ""}
 
+    # ---- SanMar common actions ----
 
-# ── factory ───────────────────────────────────────────
+    def query_products(
+        self,
+        *,
+        style: str | None = None,
+        color: str | None = None,
+        size: str | None = None,
+        brand: str | None = None,
+        category: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        params = self._compact_params(
+            {
+                "style": style,
+                "color": color,
+                "size": size,
+                "brand": brand,
+                "category": category,
+                "limit": limit,
+            }
+        )
+        return self._request("GET", "/sanmar/products", params=params)
+
+    def check_inventory(
+        self,
+        *,
+        style: str,
+        color: str | None = None,
+        size: str | None = None,
+        warehouse: str | None = None,
+    ) -> dict[str, Any]:
+        params = self._compact_params(
+            {
+                "style": style,
+                "color": color,
+                "size": size,
+                "warehouse": warehouse,
+            }
+        )
+        return self._request("GET", "/sanmar/inventory", params=params)
+
+    def check_pricing(
+        self,
+        *,
+        style: str,
+        color: str | None = None,
+        size: str | None = None,
+        quantity: int | None = None,
+    ) -> dict[str, Any]:
+        params = self._compact_params(
+            {
+                "style": style,
+                "color": color,
+                "size": size,
+                "quantity": quantity,
+            }
+        )
+        return self._request("GET", "/sanmar/pricing", params=params)
+
+    def submit_purchase_order(self, *, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/sanmar/purchase-orders", json_body=payload)
+
+    def get_order_status(
+        self,
+        *,
+        po_number: str | None = None,
+        sanmar_order_number: str | None = None,
+    ) -> dict[str, Any]:
+        params = self._compact_params(
+            {
+                "po_number": po_number,
+                "sanmar_order_number": sanmar_order_number,
+            }
+        )
+        return self._request("GET", "/sanmar/orders/status", params=params)
+
+    def get_shipping_status(
+        self,
+        *,
+        po_number: str | None = None,
+        sanmar_order_number: str | None = None,
+    ) -> dict[str, Any]:
+        params = self._compact_params(
+            {
+                "po_number": po_number,
+                "sanmar_order_number": sanmar_order_number,
+            }
+        )
+        return self._request("GET", "/sanmar/orders/shipping-status", params=params)
+
+    def get_tracking(
+        self,
+        *,
+        po_number: str | None = None,
+        sanmar_order_number: str | None = None,
+        tracking_number: str | None = None,
+    ) -> dict[str, Any]:
+        params = self._compact_params(
+            {
+                "po_number": po_number,
+                "sanmar_order_number": sanmar_order_number,
+                "tracking_number": tracking_number,
+            }
+        )
+        return self._request("GET", "/sanmar/orders/tracking", params=params)
 
 
 def example_client_from_env() -> ExampleClient:
     """Create an ExampleClient from environment variables.
 
     Required:
-      EXAMPLE_URL      — base URL (e.g. https://api.example.com)
+      EXAMPLE_URL      — integration base URL
       EXAMPLE_API_KEY  — auth token
 
-    Recommended (used to satisfy upstream role/uid audit):
-      AGENT_ROLE       — caller role slug. Should match the role this SME
-                         was provisioned under (e.g. ``example_sme``).
-      AGENT_UID        — this agent's UUID. Surfaced in upstream logs.
-
     Optional:
-      EXAMPLE_DRY_RUN  — if 'true', log write intent without calling the API.
+      AGENT_ROLE       — caller role slug
+      AGENT_UID        — this agent's UUID
+      EXAMPLE_DRY_RUN  — if true, returns write intent without making writes
     """
+
     base_url = os.getenv("EXAMPLE_URL", "").strip()
     api_key = os.getenv("EXAMPLE_API_KEY", "").strip()
     agent_role = os.getenv("AGENT_ROLE", "").strip() or None
