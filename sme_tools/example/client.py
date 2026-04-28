@@ -1,13 +1,14 @@
 """SanMar-focused HTTP client used by the SME tool layer.
 
-This client intentionally keeps endpoint interactions thin and predictable
-for LLM-driven tool calls. Methods map to common integration actions:
+This client is aligned to SanMar SOAP-style authentication patterns where
+requests carry:
 
-- product queries
-- inventory checks
-- pricing checks
-- purchase order submit
-- order/tracking/shipping status lookup
+- customer number (sanMarCustomerNumber)
+- username
+- password
+
+These fields are injected into each call automatically from environment
+variables unless explicit overrides are provided.
 """
 
 from __future__ import annotations
@@ -40,26 +41,30 @@ class ExampleClient:
     def __init__(
         self,
         base_url: str,
-        api_key: str,
+        username: str,
+        password: str,
+        customer_number: str,
         *,
         agent_role: str | None = None,
         agent_uid: str | None = None,
         dry_run: bool = False,
         timeout: int = 30,
     ) -> None:
-        if not base_url or not api_key:
+        if not base_url or not username or not password or not customer_number:
             raise ExampleConnectionError(
-                "SanMar SME not configured. Set EXAMPLE_URL and EXAMPLE_API_KEY env vars."
+                "SanMar SME not configured. Set EXAMPLE_URL, EXAMPLE_USERNAME, "
+                "EXAMPLE_PASSWORD, and EXAMPLE_CUSTOMER_NUMBER env vars."
             )
         self._base_url = base_url.rstrip("/")
-        self._api_key = api_key
+        self._username = username
+        self._password = password
+        self._customer_number = customer_number
         self._agent_role = agent_role or None
         self._agent_uid = agent_uid or None
         self._dry_run = dry_run
         self._timeout = timeout
         self._session = requests.Session()
         headers = {
-            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
@@ -73,6 +78,13 @@ class ExampleClient:
     def dry_run(self) -> bool:
         return self._dry_run
 
+    def _soap_auth_fields(self) -> dict[str, str]:
+        return {
+            "sanMarCustomerNumber": self._customer_number,
+            "userName": self._username,
+            "password": self._password,
+        }
+
     def _request(
         self,
         method: str,
@@ -82,6 +94,16 @@ class ExampleClient:
         json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         url = f"{self._base_url}{path}"
+
+        params = params or {}
+        json_body = json_body or {}
+
+        # Include auth schema required by SanMar SOAP-style integrations.
+        auth_fields = self._soap_auth_fields()
+        if method.upper() == "GET":
+            params = {**auth_fields, **params}
+        else:
+            json_body = {**auth_fields, **json_body}
 
         if self._dry_run and method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
             logger.info("[DRY RUN] %s %s body=%s", method.upper(), url, json_body)
@@ -105,7 +127,10 @@ class ExampleClient:
             raise ExampleConnectionError(f"Request to {url} failed: {exc}") from exc
 
         if resp.status_code == 401:
-            raise ExampleAPIError(401, "Unauthorized — check EXAMPLE_API_KEY")
+            raise ExampleAPIError(
+                401,
+                "Unauthorized — check EXAMPLE_USERNAME/EXAMPLE_PASSWORD/EXAMPLE_CUSTOMER_NUMBER",
+            )
 
         if not resp.ok:
             try:
@@ -132,8 +157,6 @@ class ExampleClient:
     @staticmethod
     def _compact_params(raw: dict[str, Any]) -> dict[str, Any]:
         return {k: v for k, v in raw.items() if v is not None and v != ""}
-
-    # ---- SanMar common actions ----
 
     def query_products(
         self,
@@ -245,24 +268,30 @@ def example_client_from_env() -> ExampleClient:
     """Create an ExampleClient from environment variables.
 
     Required:
-      EXAMPLE_URL      — integration base URL
-      EXAMPLE_API_KEY  — auth token
+      EXAMPLE_URL
+      EXAMPLE_USERNAME
+      EXAMPLE_PASSWORD
+      EXAMPLE_CUSTOMER_NUMBER
 
     Optional:
-      AGENT_ROLE       — caller role slug
-      AGENT_UID        — this agent's UUID
-      EXAMPLE_DRY_RUN  — if true, returns write intent without making writes
+      AGENT_ROLE
+      AGENT_UID
+      EXAMPLE_DRY_RUN
     """
 
     base_url = os.getenv("EXAMPLE_URL", "").strip()
-    api_key = os.getenv("EXAMPLE_API_KEY", "").strip()
+    username = os.getenv("EXAMPLE_USERNAME", "").strip()
+    password = os.getenv("EXAMPLE_PASSWORD", "").strip()
+    customer_number = os.getenv("EXAMPLE_CUSTOMER_NUMBER", "").strip()
     agent_role = os.getenv("AGENT_ROLE", "").strip() or None
     agent_uid = os.getenv("AGENT_UID", "").strip() or None
     dry_run = os.getenv("EXAMPLE_DRY_RUN", "").strip().lower() in ("1", "true", "yes")
 
     return ExampleClient(
         base_url=base_url,
-        api_key=api_key,
+        username=username,
+        password=password,
+        customer_number=customer_number,
         agent_role=agent_role,
         agent_uid=agent_uid,
         dry_run=dry_run,

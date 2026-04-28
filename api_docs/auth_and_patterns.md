@@ -41,11 +41,11 @@ Representative production WSDLs:
 
 ## Authentication model
 
-SanMar docs describe credential-based authentication coupled with account identifiers (including `sanMarCustomerNumber` in request payloads for many methods).
+SanMar docs describe credential-based authentication coupled with account identifiers. For SOAP-style calls, include `sanMarCustomerNumber`, `userName`, and `password` in request payloads/parameters.
 
 For this SME implementation:
 
-- Credentials are loaded from environment variables (never hardcoded).
+- Credentials are loaded from environment variables (`EXAMPLE_USERNAME`, `EXAMPLE_PASSWORD`, `EXAMPLE_CUSTOMER_NUMBER`) and never hardcoded.
 - Auth failures are surfaced verbatim to callers.
 - Missing account/customer identifiers trigger clarification rather than guessed defaults.
 
