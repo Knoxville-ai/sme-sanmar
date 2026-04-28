@@ -26,3 +26,16 @@ When new SanMar behavior is discovered:
 2. Prefer concrete field names, operation names, and payload examples.
 3. Document edge cases that can cause bad writes or silent data drift.
 4. Keep this index aligned if a new domain markdown file is added.
+
+
+## Tool usage linkage
+
+The agent tool entrypoints are in `sme_tools/example/tools.py`. Common action mapping:
+
+- Product queries -> `query_products`
+- Inventory checks -> `check_inventory`
+- Pricing checks -> `check_pricing`
+- PO submission -> `submit_purchase_order`
+- Order status -> `get_order_status`
+- Shipping status -> `get_shipping_status`
+- Tracking -> `get_tracking`
