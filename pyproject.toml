@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# Rename to `sme-<your-saas>` (e.g. `sme-salesforce`) when forking this
+# template. The console matches `source_repo` to `knoxville-ai/<repo>`,
+# not to this name, so it's purely cosmetic — but keep it in sync with
+# the repo name and the role slug for sanity.
+name = "sme-template"
+version = "0.1.0"
+description = "Class 2 SME agent template for the Knoxville AI platform"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+    "agent-core>=0.2.0",
+    # Add SME-specific runtime deps here. `requests` is already pulled in
+    # by agent-core, so an HTTP-only SME usually needs nothing extra.
+    # Examples:
+    #   "stripe>=8.0",          # official Stripe SDK
+    #   "simple-salesforce>=1.12",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sme_tools*"]
