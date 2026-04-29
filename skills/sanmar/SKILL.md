@@ -6,7 +6,9 @@ small set of typed Python functions.
 
 The skill is self-contained: it does not depend on Odoo, Knoxville's
 `agent-core`, or any vendor ORM. It only requires Python 3.11+ and
-`requests`.
+`requests` (which `agent-core` already pulls in transitively). All
+XML parsing and SOAP envelope construction uses the Python stdlib
+`xml.etree.ElementTree` — no `lxml` install is required at runtime.
 
 ## When to use this skill
 
