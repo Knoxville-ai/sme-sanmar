@@ -18,7 +18,6 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 import requests
-from lxml import etree
 
 from skills.sanmar.schemas import (
     CartValidationLineError,
@@ -482,52 +481,60 @@ class SanMarClient:
         Pre-submit lines only need style/color/size/quantity. Submit
         lines must include inventoryKey and sizeIndex (typically
         obtained by calling :meth:`get_pricing` first).
+
+        Implemented with the stdlib ElementTree so the skill has no
+        dependency beyond ``requests``.
         """
 
         creds = self.credentials
-        nsmap = {"soapenv": _NS_SOAPENV, "web": _NS_WEB}
-        envelope = etree.Element(f"{{{_NS_SOAPENV}}}Envelope", nsmap=nsmap)
-        etree.SubElement(envelope, f"{{{_NS_SOAPENV}}}Header")
-        body = etree.SubElement(envelope, f"{{{_NS_SOAPENV}}}Body")
+
+        # Register prefixes so the serialized envelope reads as
+        # <soapenv:...> / <web:...> instead of ns0/ns1. SanMar accepts
+        # any well-formed prefix, but matching the original guide
+        # keeps debugging readable.
+        ET.register_namespace("soapenv", _NS_SOAPENV)
+        ET.register_namespace("web", _NS_WEB)
+
+        envelope = ET.Element(f"{{{_NS_SOAPENV}}}Envelope")
+        ET.SubElement(envelope, f"{{{_NS_SOAPENV}}}Header")
+        body = ET.SubElement(envelope, f"{{{_NS_SOAPENV}}}Body")
         op_tag = "getPreSubmitInfo" if pre_submit else "submitPO"
-        op = etree.SubElement(body, f"{{{_NS_WEB}}}{op_tag}")
+        op = ET.SubElement(body, f"{{{_NS_WEB}}}{op_tag}")
 
         ship_to = draft.ship_to
-        arg0 = etree.SubElement(op, "arg0")
-        etree.SubElement(arg0, "attention").text = ship_to.attention or ship_to.name
-        etree.SubElement(arg0, "notes").text = ship_to.notes or ""
-        etree.SubElement(arg0, "poNum").text = draft.po_number
-        etree.SubElement(arg0, "shipTo").text = ship_to.name
-        etree.SubElement(arg0, "shipAddress1").text = ship_to.address1
-        etree.SubElement(arg0, "shipAddress2").text = ship_to.address2 or ""
-        etree.SubElement(arg0, "shipCity").text = ship_to.city
-        etree.SubElement(arg0, "shipState").text = ship_to.state
-        etree.SubElement(arg0, "shipZip").text = ship_to.zip
-        etree.SubElement(arg0, "shipMethod").text = ship_to.ship_method or "UPS"
-        etree.SubElement(arg0, "shipEmail").text = ship_to.email or ""
-        etree.SubElement(arg0, "residence").text = ship_to.residence or "N"
+        arg0 = ET.SubElement(op, "arg0")
+        ET.SubElement(arg0, "attention").text = ship_to.attention or ship_to.name
+        ET.SubElement(arg0, "notes").text = ship_to.notes or ""
+        ET.SubElement(arg0, "poNum").text = draft.po_number
+        ET.SubElement(arg0, "shipTo").text = ship_to.name
+        ET.SubElement(arg0, "shipAddress1").text = ship_to.address1
+        ET.SubElement(arg0, "shipAddress2").text = ship_to.address2 or ""
+        ET.SubElement(arg0, "shipCity").text = ship_to.city
+        ET.SubElement(arg0, "shipState").text = ship_to.state
+        ET.SubElement(arg0, "shipZip").text = ship_to.zip
+        ET.SubElement(arg0, "shipMethod").text = ship_to.ship_method or "UPS"
+        ET.SubElement(arg0, "shipEmail").text = ship_to.email or ""
+        ET.SubElement(arg0, "residence").text = ship_to.residence or "N"
 
         for line in draft.lines:
-            detail = etree.SubElement(arg0, "webServicePoDetailList")
+            detail = ET.SubElement(arg0, "webServicePoDetailList")
             if not pre_submit:
                 # Submit requires inventoryKey + sizeIndex from getPricing.
                 if line.inventory_key:
-                    etree.SubElement(detail, "inventoryKey").text = line.inventory_key
+                    ET.SubElement(detail, "inventoryKey").text = line.inventory_key
                 if line.size_index:
-                    etree.SubElement(detail, "sizeIndex").text = line.size_index
-            etree.SubElement(detail, "style").text = line.style
-            etree.SubElement(detail, "color").text = line.color
-            etree.SubElement(detail, "size").text = line.size
-            etree.SubElement(detail, "quantity").text = str(int(line.quantity))
+                    ET.SubElement(detail, "sizeIndex").text = line.size_index
+            ET.SubElement(detail, "style").text = line.style
+            ET.SubElement(detail, "color").text = line.color
+            ET.SubElement(detail, "size").text = line.size
+            ET.SubElement(detail, "quantity").text = str(int(line.quantity))
 
-        arg1 = etree.SubElement(op, "arg1")
-        etree.SubElement(arg1, "sanMarCustomerNumber").text = creds.customer_number
-        etree.SubElement(arg1, "sanMarUserName").text = creds.username
-        etree.SubElement(arg1, "sanMarUserPassword").text = creds.password
+        arg1 = ET.SubElement(op, "arg1")
+        ET.SubElement(arg1, "sanMarCustomerNumber").text = creds.customer_number
+        ET.SubElement(arg1, "sanMarUserName").text = creds.username
+        ET.SubElement(arg1, "sanMarUserPassword").text = creds.password
 
-        return etree.tostring(
-            envelope, pretty_print=True, xml_declaration=True, encoding="UTF-8"
-        )
+        return ET.tostring(envelope, encoding="utf-8", xml_declaration=True)
 
     def pre_submit_po(self, draft: PurchaseOrderDraft) -> CartValidationResult:
         payload = self.build_po_envelope(draft, pre_submit=True)
