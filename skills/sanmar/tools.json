@@ -1,0 +1,181 @@
+{
+  "skill": "sanmar",
+  "version": "0.1.0",
+  "description": "Deterministic SanMar SOAP and PromoStandards integration tools.",
+  "tools": [
+    {
+      "name": "sanmar_search_products",
+      "module": "skills.sanmar.sanmar_tools",
+      "summary": "Look up SanMar products by style code (catalog discovery).",
+      "side_effects": "read",
+      "risk_level": "low",
+      "implemented": true,
+      "endpoint": "SanMarProductInfoServicePort#getProductInfoByStyleColorSize",
+      "inputs": {
+        "style": {"type": "string", "required": true, "description": "SanMar mill style number, e.g. 'PC55'."},
+        "color": {"type": "string", "required": false, "description": "Optional mainframe color filter."},
+        "size": {"type": "string", "required": false, "description": "Optional size filter."},
+        "credentials": {"type": "SanMarCredentials", "required": false}
+      },
+      "output": {
+        "type": "object",
+        "shape": "ProductSearchResult",
+        "fields": [
+          "style", "title", "weight", "image",
+          "colors", "sizes", "variants[]"
+        ]
+      }
+    },
+    {
+      "name": "sanmar_check_inventory",
+      "module": "skills.sanmar.sanmar_tools",
+      "summary": "Check live SanMar inventory for a single style/color/size.",
+      "side_effects": "read",
+      "risk_level": "low",
+      "implemented": true,
+      "endpoint": "SanMarWebServicePort#getInventoryQtyForStyleColorSize",
+      "inputs": {
+        "style": {"type": "string", "required": true},
+        "color": {"type": "string", "required": true, "description": "SanMar mainframe color code (not the marketing name)."},
+        "size": {"type": "string", "required": true},
+        "credentials": {"type": "SanMarCredentials", "required": false}
+      },
+      "output": {
+        "type": "object",
+        "shape": "InventoryResult",
+        "fields": [
+          "style", "color", "size",
+          "warehouse_quantities[]", "total_available"
+        ],
+        "notes": "SanMar's inventory endpoint returns a list of warehouse quantities; total_available is the maximum single-warehouse value (matching upstream availability semantics in the reference implementation)."
+      }
+    },
+    {
+      "name": "sanmar_get_pricing",
+      "module": "skills.sanmar.sanmar_tools",
+      "summary": "Pull customer-specific (myPrice) and tier pricing for one or more style/color/size lines.",
+      "side_effects": "read",
+      "risk_level": "low",
+      "implemented": true,
+      "endpoint": "SanMarPricingServicePort#getPricing",
+      "inputs": {
+        "lines": {
+          "type": "array<PricingLine>",
+          "required": true,
+          "description": "Each line is {style, color, size}."
+        },
+        "credentials": {"type": "SanMarCredentials", "required": false}
+      },
+      "output": {
+        "type": "object",
+        "shape": "PricingResult",
+        "fields": [
+          "items[].style", "items[].color", "items[].size",
+          "items[].inventory_key", "items[].size_index",
+          "items[].piece_price", "items[].dozen_price",
+          "items[].case_price", "items[].my_price",
+          "items[].sale_piece_price", "items[].sale_dozen_price",
+          "items[].sale_case_price"
+        ]
+      }
+    },
+    {
+      "name": "sanmar_validate_cart",
+      "module": "skills.sanmar.sanmar_tools",
+      "summary": "Run a SanMar pre-submit (getPreSubmitInfo) check against a draft PO without committing it. Surfaces inventory and validation errors per line.",
+      "side_effects": "read",
+      "risk_level": "low",
+      "implemented": true,
+      "endpoint": "SanMarPOServicePort#getPreSubmitInfo",
+      "inputs": {
+        "purchase_order": {"type": "PurchaseOrderDraft", "required": true},
+        "credentials": {"type": "SanMarCredentials", "required": false}
+      },
+      "output": {
+        "type": "object",
+        "shape": "CartValidationResult",
+        "fields": ["ok", "errored_lines[]", "warnings[]"]
+      }
+    },
+    {
+      "name": "sanmar_create_purchase_order",
+      "module": "skills.sanmar.sanmar_tools",
+      "summary": "Submit a SanMar purchase order via SOAP. EXTERNAL WRITE.",
+      "side_effects": "write",
+      "risk_level": "high",
+      "implemented": true,
+      "endpoint": "SanMarPOServicePort#submitPO",
+      "preflight_required": "sanmar_validate_cart and sanmar_get_pricing should be called first to enrich each line with inventoryKey and sizeIndex.",
+      "inputs": {
+        "purchase_order": {"type": "PurchaseOrderDraft", "required": true},
+        "confirm": {
+          "type": "boolean",
+          "required": true,
+          "description": "Must be true to actually transmit. Otherwise the tool returns a dry-run preview."
+        },
+        "credentials": {"type": "SanMarCredentials", "required": false}
+      },
+      "output": {
+        "type": "object",
+        "shape": "PurchaseOrderResult",
+        "fields": ["status", "po_number", "sanmar_reference", "raw_payload", "raw_response"]
+      }
+    },
+    {
+      "name": "sanmar_check_order_status",
+      "module": "skills.sanmar.sanmar_tools",
+      "summary": "Fetch SanMar's sales-order number for a previously submitted PO via the OrderShipmentNotification PromoStandards service.",
+      "side_effects": "read",
+      "risk_level": "low",
+      "implemented": true,
+      "endpoint": "OrderShipmentNotificationServiceBinding#GetOrderShipmentNotificationRequest",
+      "inputs": {
+        "po_number": {"type": "string", "required": true, "description": "Customer-side PO reference (poNum used at submit time)."},
+        "credentials": {"type": "SanMarCredentials", "required": false}
+      },
+      "output": {
+        "type": "object",
+        "shape": "OrderStatusResult",
+        "fields": ["po_number", "sanmar_order_number", "shipment_count", "status"]
+      }
+    },
+    {
+      "name": "sanmar_get_tracking",
+      "module": "skills.sanmar.sanmar_tools",
+      "summary": "Return tracking numbers and normalized carriers for a SanMar PO.",
+      "side_effects": "read",
+      "risk_level": "low",
+      "implemented": true,
+      "endpoint": "OrderShipmentNotificationServiceBinding#GetOrderShipmentNotificationRequest",
+      "inputs": {
+        "po_number": {"type": "string", "required": true},
+        "credentials": {"type": "SanMarCredentials", "required": false}
+      },
+      "output": {
+        "type": "object",
+        "shape": "TrackingResult",
+        "fields": ["po_number", "shipments[].tracking_number", "shipments[].carrier"]
+      }
+    },
+    {
+      "name": "sanmar_cancel_order",
+      "module": "skills.sanmar.sanmar_tools",
+      "summary": "Cancel a previously submitted SanMar PO. EXTERNAL WRITE.",
+      "side_effects": "write",
+      "risk_level": "high",
+      "implemented": false,
+      "stub_reason": "SanMar does not expose a public cancel endpoint in the SOAP web services or PromoStandards bindings used by the reference implementation. Cancellation today goes through SanMar customer service. The tool surface is reserved so future vendor support can be added without breaking callers.",
+      "inputs": {
+        "po_number": {"type": "string", "required": true},
+        "reason": {"type": "string", "required": false},
+        "confirm": {"type": "boolean", "required": true},
+        "credentials": {"type": "SanMarCredentials", "required": false}
+      },
+      "output": {
+        "type": "object",
+        "shape": "CancelResult",
+        "fields": ["status", "message"]
+      }
+    }
+  ]
+}
