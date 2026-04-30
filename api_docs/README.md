@@ -30,12 +30,17 @@ When new SanMar behavior is discovered:
 
 ## Tool usage linkage
 
-The agent tool entrypoints are in `sme_tools/example/tools.py`. Common action mapping:
+The agent tool entrypoints live in `skills/sanmar/sanmar_tools.py`,
+contracted by `skills/sanmar/SKILL.md`, with a machine-readable
+manifest in `skills/sanmar/tools.json`. Common action mapping:
 
-- Product queries -> `query_products`
-- Inventory checks -> `check_inventory`
-- Pricing checks -> `check_pricing`
-- PO submission -> `submit_purchase_order`
-- Order status -> `get_order_status`
-- Shipping status -> `get_shipping_status`
-- Tracking -> `get_tracking`
+- Product queries -> `sanmar_search_products`
+- Inventory checks -> `sanmar_check_inventory`
+- Pricing checks -> `sanmar_get_pricing`
+- Pre-submit cart validation -> `sanmar_validate_cart`
+- PO submission -> `sanmar_create_purchase_order`
+- Order status -> `sanmar_check_order_status`
+- Tracking / shipping status -> `sanmar_get_tracking`
+- PDF PO intake -> `sanmar_parse_po_pdf`
+- Marketing-color → mainframe-color resolution (SDL CSV over SFTP) ->
+  `sanmar_lookup_mainframe_color`

@@ -45,9 +45,17 @@ SanMar docs describe credential-based authentication coupled with account identi
 
 For this SME implementation:
 
-- Credentials are loaded from environment variables (`EXAMPLE_USERNAME`, `EXAMPLE_PASSWORD`, `EXAMPLE_CUSTOMER_NUMBER`) and never hardcoded.
+- Credentials are **not** loaded from the environment by default. The
+  agent elicits them from the user on first need, remembers them for
+  the session, and passes them explicitly into every tool call:
+  - Web services: a `SanMarCredentials(customer_number, username, password, environment)` object passed via `credentials=`.
+  - SFTP (SDL CSV): a `SanMarFTPCredentials(username, password)` object passed via `ftp_credentials=`. The FTP password is separate from the web-services password.
+- Operators may optionally cache credentials cross-session via the
+  `SANMAR_*` / `SANMAR_FTP_*` environment variables documented in
+  `skills/sanmar/SKILL.md` § "Optional environment-variable cache".
 - Auth failures are surfaced verbatim to callers.
-- Missing account/customer identifiers trigger clarification rather than guessed defaults.
+- Missing account/customer identifiers trigger `needs_clarification`
+  rather than guessed defaults.
 
 ### Required identity fields to preserve
 

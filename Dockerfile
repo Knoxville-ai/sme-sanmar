@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir "pypdf>=4.0" "paramiko>=3.0"
 # Stage the entire repo at /srv/sme/. agent-core's bootstrap mirrors this
 # tree into the OpenClaw workspace on every boot so the agent can read
 # its own code, docs, and configs through workspace-rooted file tools,
-# and entrypoint.sh adds /srv/sme to PYTHONPATH so `import sme_tools.*`
+# and entrypoint.sh adds /srv/sme to PYTHONPATH so `import skills.sanmar.*`
 # works in skill subprocesses.
 COPY . /srv/sme/
 
