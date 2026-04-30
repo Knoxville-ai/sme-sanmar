@@ -11,6 +11,6 @@ On first boot:
   - `api_docs/web_services.md`
   - `api_docs/ftp_feeds.md`
   - `api_docs/purchase_orders.md`
-- Use only `sme_tools.example.tools` entrypoints for execution (`query_products`, `check_inventory`, `check_pricing`, `submit_purchase_order`, `get_order_status`, `get_shipping_status`, `get_tracking`).
+- Use only `sme_tools.example.tools` entrypoints for execution (`query_products`, `check_inventory`, `check_pricing`, `submit_purchase_order`, `get_order_status`, `get_shipping_status`, `get_tracking`, `sanmar_lookup_mainframe_color`, `sanmar_parse_po_pdf`).
 - Expect inbound messages from other agents (`sender_kind=agent`); reject user-routed traffic.
 - Favor deterministic SanMar keys (`style`, `color`, `size`, `sizeIndex`, `inventory_key`, `unique_key`) in all outputs.
