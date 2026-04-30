@@ -5,6 +5,14 @@
 # (those are the changes likely to break the contract).
 FROM ghcr.io/knoxville-ai/agent-core:0.2
 
+# Install SME-specific Python deps on top of the agent-core base image.
+# Listed explicitly (not via `pip install .`) so we don't disturb the
+# base image's pinned agent-core / requests versions.
+#   - pypdf:    sanmar_parse_po_pdf (PDF text extraction)
+#   - paramiko: sanmar_lookup_mainframe_color + auto-resolve fallback
+#               (SFTP into ftp.sanmar.com:2200)
+RUN pip install --no-cache-dir "pypdf>=4.0" "paramiko>=3.0"
+
 # Stage the entire repo at /srv/sme/. agent-core's bootstrap mirrors this
 # tree into the OpenClaw workspace on every boot so the agent can read
 # its own code, docs, and configs through workspace-rooted file tools,
