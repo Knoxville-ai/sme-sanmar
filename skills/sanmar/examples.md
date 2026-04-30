@@ -415,17 +415,68 @@ user verbatim — do not guess.
 
 ---
 
-## 10. Missing credentials → clarification
+## 10. Missing credentials → ask the user, then remember
 
-If the runtime environment has no `SANMAR_*` vars and the caller has
-not passed an explicit `credentials=`, the tool raises
-`SanMarConfigError`. The SME's policy is:
+Credentials are **not** present in the environment by default. The
+runtime contract is "agent collects creds from the user → agent
+passes them explicitly into every call → agent remembers them for
+the rest of the session."
+
+### First call in a session
+
+```python
+sanmar_check_inventory(style="PC55", color="Black", size="L")
+# raises SanMarConfigError
+```
+
+The SME's policy on `SanMarConfigError` is:
 
 ```json
 {
   "status": "needs_clarification",
-  "question": "SanMar credentials are not configured. Provide sanMarCustomerNumber, userName, and password (or set SANMAR_CUSTOMER_NUMBER / SANMAR_USERNAME / SANMAR_PASSWORD)."
+  "question": "I need your SanMar web-service credentials before I can run that. Please provide your SanMar customer number, web-services username, and web-services password.",
+  "fields_needed": ["customer_number", "username", "password"]
 }
 ```
 
-Never guess or fall back to other vendors.
+If the call also touches the FTP server (`sanmar_lookup_mainframe_color`
+or the auto-resolve path in inventory/pricing) and FTP creds are
+missing, the agent should ask for those separately:
+
+```json
+{
+  "status": "needs_clarification",
+  "question": "To resolve the mainframe color I need your SanMar SFTP credentials. The FTP password is different from your sanmar.com / web-services password. Please provide your SanMar customer number and FTP password.",
+  "fields_needed": ["ftp_username", "ftp_password"]
+}
+```
+
+### Subsequent calls
+
+Once the user supplies the values, the agent remembers them (in its
+working memory for the session) and passes them explicitly into every
+call:
+
+```python
+ws = SanMarCredentials(customer_number="123456", username="api@x.com", password="…")
+ftp = SanMarFTPCredentials(username="123456", password="…")
+
+sanmar_check_inventory(
+    style="PC55", color="Athletic Heather", size="L",
+    credentials=ws, ftp_credentials=ftp,
+)
+sanmar_get_pricing(
+    lines=[{"style": "PC55", "color": "Athletic Heather", "size": "L"}],
+    credentials=ws, ftp_credentials=ftp,
+)
+sanmar_create_purchase_order(purchase_order=draft, confirm=True, credentials=ws)
+```
+
+### Persisting across sessions (optional)
+
+If the operator wants the agent to skip the question on future
+sessions, they can set `SANMAR_*` / `SANMAR_FTP_*` env vars (see
+`SKILL.md` § "Optional environment-variable cache"). When those are
+present and no `credentials=` is passed, the tool falls back to them.
+This is a convenience, not the default — never guess values, and
+never fall back to another vendor.

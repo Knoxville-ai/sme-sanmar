@@ -118,9 +118,15 @@ _NS_PROMO_SHARED = (
 
 
 def credentials_from_env() -> SanMarCredentials:
-    """Load credentials from SANMAR_* env vars.
+    """Optional fallback: load credentials from SANMAR_* env vars.
 
-    Raises :class:`SanMarConfigError` if any required field is missing.
+    The supported runtime pattern is for the agent to collect
+    credentials from the user and pass an explicit
+    :class:`SanMarCredentials` object into every tool call. This
+    helper is the optional cache layer — used only when the caller
+    did not pass credentials directly. Raises
+    :class:`SanMarConfigError` if no env-var fallback is configured;
+    the agent should treat that error as a signal to ask the user.
     """
 
     customer_number = os.getenv("SANMAR_CUSTOMER_NUMBER", "").strip()
@@ -131,15 +137,19 @@ def credentials_from_env() -> SanMarCredentials:
     missing = [
         name
         for name, value in (
-            ("SANMAR_CUSTOMER_NUMBER", customer_number),
-            ("SANMAR_USERNAME", username),
-            ("SANMAR_PASSWORD", password),
+            ("customer_number", customer_number),
+            ("username", username),
+            ("password", password),
         )
         if not value
     ]
     if missing:
         raise SanMarConfigError(
-            "Missing SanMar credentials in environment: " + ", ".join(missing)
+            "SanMar web-service credentials were not provided. "
+            "Ask the user for "
+            + ", ".join(missing)
+            + " and pass them as a SanMarCredentials object via "
+            "the `credentials=` argument."
         )
 
     return SanMarCredentials(

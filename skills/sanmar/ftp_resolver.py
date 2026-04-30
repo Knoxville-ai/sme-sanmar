@@ -64,11 +64,21 @@ DEFAULT_CACHE_TTL_SECONDS = 24 * 60 * 60  # SanMar refreshes the SDL nightly.
 
 
 def ftp_credentials_from_env() -> SanMarFTPCredentials:
-    """Load FTP credentials from environment variables.
+    """Optional fallback: load FTP credentials from environment variables.
 
-    Recognized vars:
+    The supported runtime pattern is for the agent to collect FTP
+    credentials from the user and pass an explicit
+    :class:`SanMarFTPCredentials` object into every tool call. This
+    helper is the optional cache layer — used only when the caller
+    did not pass credentials directly. Raises
+    :class:`SanMarFTPConfigError` if no env-var fallback is
+    configured; the agent should treat that error as a signal to ask
+    the user for the FTP password (which is distinct from the
+    sanmar.com / web-services password).
+
+    Recognized vars (all optional):
       ``SANMAR_FTP_USERNAME`` — defaults to ``SANMAR_CUSTOMER_NUMBER``.
-      ``SANMAR_FTP_PASSWORD`` — required.
+      ``SANMAR_FTP_PASSWORD``
       ``SANMAR_FTP_HOST`` — defaults to ``ftp.sanmar.com``.
       ``SANMAR_FTP_PORT`` — defaults to ``2200``.
     """
@@ -87,12 +97,15 @@ def ftp_credentials_from_env() -> SanMarFTPCredentials:
 
     missing: list[str] = []
     if not username:
-        missing.append("SANMAR_FTP_USERNAME (or SANMAR_CUSTOMER_NUMBER)")
+        missing.append("FTP username (SanMar customer number)")
     if not password:
-        missing.append("SANMAR_FTP_PASSWORD")
+        missing.append("FTP password (separate from the web-services password)")
     if missing:
         raise SanMarFTPConfigError(
-            "Missing SanMar FTP credentials in environment: " + ", ".join(missing)
+            "SanMar FTP credentials were not provided. Ask the user for "
+            + " and ".join(missing)
+            + " and pass them as a SanMarFTPCredentials object via "
+            "the `ftp_credentials=` argument."
         )
     return SanMarFTPCredentials(username=username, password=password, host=host, port=port)
 

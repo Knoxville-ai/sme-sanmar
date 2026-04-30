@@ -80,44 +80,84 @@ PromoStandards (order shipment notification) uses `shar:id` and
 `shar:password` in the SOAP header objects, typically the same
 username/password.
 
-The skill never hardcodes credentials. Two ways to provide them:
+The skill never hardcodes credentials. Credentials are **not** present
+in the environment by default — the agent is expected to elicit them
+from the user when first needed and pass them explicitly into every
+tool call.
 
-1. **Environment variables** (recommended at runtime):
+### Agent credential flow
 
-   ```bash
-   SANMAR_CUSTOMER_NUMBER=...
-   SANMAR_USERNAME=...
-   SANMAR_PASSWORD=...
-   SANMAR_ENV=production    # or "development" — flips PO endpoint to test-ws
-   ```
-
-2. **Explicit credentials object** passed into every tool call:
+1. **First call in a session:** call the tool without credentials. If
+   none are configured the tool raises `SanMarConfigError`.
+2. The agent treats that error as a `needs_clarification` and asks the
+   user for the missing fields (customer number, username, password,
+   and — for FTP-backed tools — the FTP password).
+3. The agent **remembers** the values for the rest of the session and
+   passes them explicitly into every subsequent call:
 
    ```python
-   from skills.sanmar.schemas import SanMarCredentials
-   creds = SanMarCredentials(customer_number=..., username=..., password=...)
-   sanmar_check_inventory(style="PC55", color="Black", size="L", credentials=creds)
+   from skills.sanmar.schemas import SanMarCredentials, SanMarFTPCredentials
+
+   ws_creds = SanMarCredentials(
+       customer_number="123456",
+       username="api_user@example.com",
+       password="...",
+       environment="production",   # or "development" for the test PO endpoint
+   )
+   ftp_creds = SanMarFTPCredentials(
+       username="123456",          # SanMar customer number
+       password="...",             # FTP-specific password (NOT the web-services password)
+   )
+
+   sanmar_check_inventory(
+       style="PC55", color="Athletic Heather", size="L",
+       credentials=ws_creds,
+       ftp_credentials=ftp_creds,
+   )
    ```
+4. The agent may **optionally** persist credentials by exporting them
+   as environment variables (see below) so they survive across
+   sessions. This is a convenience, not the default contract — the
+   tool always prefers the explicitly-passed credentials object when
+   one is provided.
 
-If credentials are missing, the skill raises `SanMarConfigError` and the
-caller agent must respond with `needs_clarification` and request the
-credentials from the operator. Do not guess defaults.
+Do not guess defaults, do not invent values, and do not reuse
+credentials across tenants.
 
-### FTP credentials (separate from web services)
+### Optional environment-variable cache
 
-`sanmar_lookup_mainframe_color` and the auto-resolve fallback need
-SanMar SFTP access. Per SanMar's FTP Integration Guide v23.1, the
-server is `ftp.sanmar.com:2200` over **SFTP** (SSH), and FTP creds are
-issued separately from web-service creds — your `sanmar.com` username
-will *not* work on the FTP server.
+If the agent or operator chooses to persist credentials between
+sessions, the skill recognizes these vars as a fallback when no
+explicit `credentials=` is passed:
 
 ```bash
+# Web services (SOAP + PromoStandards)
+SANMAR_CUSTOMER_NUMBER=...
+SANMAR_USERNAME=...
+SANMAR_PASSWORD=...
+SANMAR_ENV=production    # or "development" — flips PO endpoint to test-ws
+
+# SFTP (SDL CSV download)
 SANMAR_FTP_USERNAME=<customer_number>   # defaults to SANMAR_CUSTOMER_NUMBER
 SANMAR_FTP_PASSWORD=...
 SANMAR_FTP_HOST=ftp.sanmar.com           # optional override
 SANMAR_FTP_PORT=2200                     # optional override
 SANMAR_FTP_CACHE_DIR=/tmp/sme-sanmar-cache  # optional override
 ```
+
+These are an **optional cache layer**. The supported runtime pattern
+is "agent collects creds from the user → agent passes them explicitly
+into every call."
+
+### FTP credentials (separate from web services)
+
+`sanmar_lookup_mainframe_color` and the auto-resolve fallback in
+`sanmar_check_inventory` / `sanmar_get_pricing` need SanMar SFTP
+access. Per SanMar's FTP Integration Guide v23.1, the server is
+`ftp.sanmar.com:2200` over **SFTP** (SSH), and FTP creds are issued
+separately from web-service creds — your `sanmar.com` username will
+*not* work on the FTP server. The agent must ask for the FTP
+password as a distinct credential.
 
 The SDL CSV (`SanMarPDD/SanMar_SDL_N.csv`) is cached locally for 24h
 (SanMar refreshes it nightly). Pass `force_refresh=True` to bypass the
