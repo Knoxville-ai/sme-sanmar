@@ -293,7 +293,129 @@ recommend the operator open a SanMar customer-service ticket.
 
 ---
 
-## 8. Missing credentials → clarification
+## 8. Parse a PDF purchase order uploaded by the user
+
+**Prompt:** "Here's the PO PDF — can you place it for us?"
+
+The agent must parse the PDF, present the extracted values for
+approval, then submit. Never auto-submit without user confirmation.
+
+**Tool call (parse):**
+
+```python
+sanmar_parse_po_pdf(pdf_path="/uploads/po-1042.pdf")
+```
+
+**Response upstream:**
+
+```json
+{
+  "po_number": "PO-1042",
+  "order_date": "04/28/2026",
+  "ship_method": "UPS Ground",
+  "ship_to": {
+    "name": "BaconCo Receiving",
+    "address1": "123 Print Way",
+    "address2": "",
+    "city": "Memphis",
+    "state": "TN",
+    "zip": "38103",
+    "email": "purchasing@example.com"
+  },
+  "lines": [
+    {"style": "PC55", "color": "Black", "size": "L",
+     "quantity": 24, "unit_price": 7.52, "description": "Port & Co Tee Black"},
+    {"style": "PC55", "color": "Navy", "size": "XL",
+     "quantity": 12, "unit_price": 7.52, "description": "Port & Co Tee Navy"}
+  ],
+  "warnings": [],
+  "draft_for_submit": {
+    "po_number": "PO-1042",
+    "ship_to": {"name": "BaconCo Receiving", "address1": "123 Print Way",
+                "city": "Memphis", "state": "TN", "zip": "38103",
+                "email": "purchasing@example.com", "ship_method": "UPS Ground"},
+    "lines": [
+      {"style": "PC55", "color": "Black", "size": "L", "quantity": 24},
+      {"style": "PC55", "color": "Navy", "size": "XL", "quantity": 12}
+    ]
+  },
+  "surface": "sanmar_pdf_parser",
+  "operation": "parse_po_pdf"
+}
+```
+
+**Agent flow:**
+
+1. Show the parsed PO back to the user (especially `warnings`).
+2. After user approval, call `sanmar_get_pricing` to enrich each line
+   with `inventory_key` / `size_index`.
+3. Call `sanmar_validate_cart` and confirm `ok: true`.
+4. Call `sanmar_create_purchase_order(purchase_order=draft_for_submit, confirm=True)`.
+
+If `warnings` flags missing fields, ask the user to fill them in
+rather than guessing.
+
+---
+
+## 9. Resolve a marketing color to its SanMar mainframe color
+
+**Prompt:** "Inventory check for PC55 in Athletic Heather size L."
+
+The agent first tries the marketing name. If SanMar rejects it or
+returns nothing, the tool automatically falls back to the SDL CSV
+on SanMar's FTP server and retries — no explicit lookup needed.
+
+**Tool call (typical):**
+
+```python
+sanmar_check_inventory(style="PC55", color="Athletic Heather", size="L")
+```
+
+**Behind the scenes:**
+
+1. Initial SOAP call with `color="Athletic Heather"` errors out
+   (`Invalid style/color/size combination`).
+2. Tool downloads `SanMarPDD/SanMar_SDL_N.csv` from
+   `ftp.sanmar.com:2200` (or uses the local 24h cache).
+3. Finds the row with `STYLE#=PC55`, `COLOR_NAME=Athletic Heather`,
+   `SIZE=L` and reads `SANMAR_MAINFRAME_COLOR=ATHHTHR`.
+4. Retries the inventory call with `color="ATHHTHR"`.
+5. Returns the normal `InventoryResult`, with `color` set to the
+   resolved mainframe code so the agent can carry it through to
+   pricing and PO submission.
+
+**Explicit lookup** (when the agent wants the code without making the
+inventory/pricing call yet):
+
+```python
+sanmar_lookup_mainframe_color(style="PC55", color="Athletic Heather", size="L")
+```
+
+```json
+{
+  "status": "matched",
+  "style": "PC55",
+  "requested_color": "Athletic Heather",
+  "size": "L",
+  "matches": [
+    {"style": "PC55", "requested_color": "Athletic Heather", "size": "L",
+     "mainframe_color": "ATHHTHR", "color_name": "Athletic Heather",
+     "inventory_key": "12345", "size_index": "3", "unique_key": "12345_3"}
+  ],
+  "source_file": "SanMarPDD/SanMar_SDL_N.csv",
+  "as_of": "2026-04-30T06:02:11+00:00",
+  "surface": "sanmar_ftp",
+  "operation": "lookup_mainframe_color"
+}
+```
+
+If `status` is `ambiguous`, the agent should ask the user to pick
+between the listed `matches`. If `not_found`, surface that to the
+user verbatim — do not guess.
+
+---
+
+## 10. Missing credentials → clarification
 
 If the runtime environment has no `SANMAR_*` vars and the caller has
 not passed an explicit `credentials=`, the tool raises

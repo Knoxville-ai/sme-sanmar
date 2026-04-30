@@ -36,9 +36,11 @@
       "endpoint": "SanMarWebServicePort#getInventoryQtyForStyleColorSize",
       "inputs": {
         "style": {"type": "string", "required": true},
-        "color": {"type": "string", "required": true, "description": "SanMar mainframe color code (not the marketing name)."},
+        "color": {"type": "string", "required": true, "description": "SanMar mainframe color code preferred. If a marketing color name is passed and auto_resolve_color is true, the tool resolves it via the SDL CSV on the FTP server and retries automatically."},
         "size": {"type": "string", "required": true},
-        "credentials": {"type": "SanMarCredentials", "required": false}
+        "credentials": {"type": "SanMarCredentials", "required": false},
+        "ftp_credentials": {"type": "SanMarFTPCredentials", "required": false, "description": "Used only when auto-resolving the mainframe color falls back to the SDL FTP file."},
+        "auto_resolve_color": {"type": "boolean", "required": false, "description": "Default true. On API error or empty response, fetch the SDL CSV and retry once with the resolved mainframe color."}
       },
       "output": {
         "type": "object",
@@ -64,7 +66,9 @@
           "required": true,
           "description": "Each line is {style, color, size}."
         },
-        "credentials": {"type": "SanMarCredentials", "required": false}
+        "credentials": {"type": "SanMarCredentials", "required": false},
+        "ftp_credentials": {"type": "SanMarFTPCredentials", "required": false, "description": "Used only when auto-resolving missing lines via the SDL FTP file."},
+        "auto_resolve_color": {"type": "boolean", "required": false, "description": "Default true. If the response is missing some lines (a signal that a marketing color name was used), fetch the SDL CSV and retry the missing lines with their mainframe colors."}
       },
       "output": {
         "type": "object",
@@ -155,6 +159,58 @@
         "type": "object",
         "shape": "TrackingResult",
         "fields": ["po_number", "shipments[].tracking_number", "shipments[].carrier"]
+      }
+    },
+    {
+      "name": "sanmar_parse_po_pdf",
+      "module": "skills.sanmar.sanmar_tools",
+      "summary": "Extract a draft purchase order (po_number, ship_to, lines) from a PDF that the user uploads. The agent must show the parsed values to the user for approval before submitting.",
+      "side_effects": "read",
+      "risk_level": "low",
+      "implemented": true,
+      "endpoint": "local:pypdf",
+      "inputs": {
+        "pdf_path": {"type": "string", "required": false, "description": "Filesystem path to the PDF. Provide either pdf_path OR pdf_bytes."},
+        "pdf_bytes": {"type": "bytes", "required": false, "description": "Raw PDF content. Provide either pdf_path OR pdf_bytes."}
+      },
+      "output": {
+        "type": "object",
+        "shape": "ParsedPurchaseOrder",
+        "fields": [
+          "po_number", "order_date", "ship_to", "ship_method",
+          "lines[].style", "lines[].color", "lines[].size",
+          "lines[].quantity", "lines[].unit_price", "lines[].description",
+          "warnings[]", "draft_for_submit"
+        ],
+        "notes": "The 'draft_for_submit' field is a ready-to-pass purchase_order dict for sanmar_create_purchase_order, populated only when po_number and at least one line are present. Always confirm with the user before submitting."
+      }
+    },
+    {
+      "name": "sanmar_lookup_mainframe_color",
+      "module": "skills.sanmar.sanmar_tools",
+      "summary": "Resolve a marketing color name (e.g. 'Athletic Heather') to SanMar's mainframe color code (e.g. 'ATHHTHR') via the SDL CSV on SanMar's SFTP server. Use this when inventory or pricing queries fail with an invalid-color error.",
+      "side_effects": "read",
+      "risk_level": "low",
+      "implemented": true,
+      "endpoint": "sftp://ftp.sanmar.com:2200/SanMarPDD/SanMar_SDL_N.csv",
+      "inputs": {
+        "style": {"type": "string", "required": true, "description": "SanMar mill style number, e.g. 'PC55'."},
+        "color": {"type": "string", "required": true, "description": "Marketing color name as shown in the catalog or PO."},
+        "size": {"type": "string", "required": false, "description": "Optional size filter to disambiguate multi-size matches."},
+        "ftp_credentials": {"type": "SanMarFTPCredentials", "required": false, "description": "Optional. Defaults to SANMAR_FTP_USERNAME / SANMAR_FTP_PASSWORD env vars."},
+        "force_refresh": {"type": "boolean", "required": false, "description": "Bypass the local cache and re-download the SDL CSV. Default false."}
+      },
+      "output": {
+        "type": "object",
+        "shape": "MainframeColorResolution",
+        "fields": [
+          "status", "style", "requested_color", "size",
+          "matches[].mainframe_color", "matches[].color_name",
+          "matches[].size", "matches[].inventory_key",
+          "matches[].size_index", "matches[].unique_key",
+          "source_file", "as_of"
+        ],
+        "notes": "status is one of 'matched' | 'ambiguous' | 'not_found'. The CSV is cached locally (default /tmp/sme-sanmar-cache) for 24h between fetches."
       }
     },
     {
