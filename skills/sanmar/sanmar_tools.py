@@ -15,7 +15,18 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from skills.sanmar.ftp_resolver import (
+    SanMarFTPConfigError,
+    SanMarFTPError,
+    lookup_mainframe_color,
+)
+from skills.sanmar.pdf_parser import (
+    PDFParseError,
+    parse_purchase_order_pdf,
+    to_purchase_order_draft,
+)
 from skills.sanmar.sanmar_client import (
+    SanMarAPIError,
     SanMarClient,
     SanMarConfigError,
     SanMarError,
@@ -25,7 +36,9 @@ from skills.sanmar.schemas import (
     CancelResult,
     CartValidationResult,
     InventoryResult,
+    MainframeColorResolution,
     OrderStatusResult,
+    ParsedPurchaseOrder,
     PricingLine,
     PricingResult,
     ProductSearchResult,
@@ -33,6 +46,7 @@ from skills.sanmar.schemas import (
     PurchaseOrderLine,
     PurchaseOrderResult,
     SanMarCredentials,
+    SanMarFTPCredentials,
     ShipTo,
     TrackingResult,
     to_dict,
@@ -120,23 +134,85 @@ def sanmar_search_products(
     return to_dict(result)
 
 
+def _resolve_mainframe_color_or_none(
+    style: str,
+    color: str,
+    size: str | None,
+    ftp_credentials: SanMarFTPCredentials | None,
+) -> str | None:
+    """Try the SDL FTP fallback. Returns the mainframe color or ``None``."""
+
+    try:
+        resolution = lookup_mainframe_color(
+            style=style,
+            color=color,
+            size=size,
+            credentials=ftp_credentials,
+        )
+    except (SanMarFTPError, SanMarFTPConfigError) as exc:
+        logger.warning(
+            "SDL fallback unavailable for style=%s color=%s: %s", style, color, exc
+        )
+        return None
+    if resolution.status == "matched" and resolution.matches:
+        return resolution.matches[0].mainframe_color
+    return None
+
+
 def sanmar_check_inventory(
     style: str,
     color: str,
     size: str,
     *,
     credentials: SanMarCredentials | None = None,
+    ftp_credentials: SanMarFTPCredentials | None = None,
+    auto_resolve_color: bool = True,
 ) -> dict[str, Any]:
     """Live inventory for a single style/color/size at SanMar warehouses.
 
-    Note: ``color`` must be the SanMar mainframe color code, not the
-    consumer-facing color name. Read-only.
+    SanMar's inventory endpoint queries against the *mainframe* color
+    code, not the marketing color name. If the initial request fails
+    with a SanMar API error or returns no warehouses, and
+    ``auto_resolve_color`` is ``True`` (default), this tool will fetch
+    ``SanMarPDD/SanMar_SDL_N.csv`` from SanMar's SFTP server, resolve
+    the marketing color to the mainframe color for the given
+    style/size, and retry once. Read-only.
     """
 
     if not (style and color and size):
         raise SanMarConfigError("style, color, and size are all required")
     client = _client(credentials)
-    result: InventoryResult = client.get_inventory(style=style, color=color, size=size)
+
+    try:
+        result: InventoryResult = client.get_inventory(style=style, color=color, size=size)
+    except SanMarAPIError:
+        if not auto_resolve_color:
+            raise
+        mainframe = _resolve_mainframe_color_or_none(style, color, size, ftp_credentials)
+        if not mainframe or mainframe == color:
+            raise
+        logger.info(
+            "Retrying inventory query with mainframe color %s (was %s)", mainframe, color
+        )
+        result = client.get_inventory(style=style, color=mainframe, size=size)
+        result.color = mainframe
+        return to_dict(result)
+
+    if (
+        auto_resolve_color
+        and not result.warehouse_quantities
+        and not result.total_available
+    ):
+        mainframe = _resolve_mainframe_color_or_none(style, color, size, ftp_credentials)
+        if mainframe and mainframe != color:
+            logger.info(
+                "Empty inventory for color=%s; retrying with mainframe %s",
+                color,
+                mainframe,
+            )
+            retry = client.get_inventory(style=style, color=mainframe, size=size)
+            if retry.warehouse_quantities or retry.total_available:
+                return to_dict(retry)
     return to_dict(result)
 
 
@@ -144,21 +220,72 @@ def sanmar_get_pricing(
     lines: list[Any],
     *,
     credentials: SanMarCredentials | None = None,
+    ftp_credentials: SanMarFTPCredentials | None = None,
+    auto_resolve_color: bool = True,
 ) -> dict[str, Any]:
     """Customer-specific (`myPrice`) and tier pricing for one or more lines.
 
     Each line is ``{style, color, size}``. The response also includes
     ``inventory_key`` and ``size_index`` per line — pass those into
     :func:`sanmar_create_purchase_order` to enrich PO submit lines.
-    Read-only.
+
+    SanMar's pricing endpoint queries against the mainframe color
+    code. When ``auto_resolve_color`` is ``True`` (default) and the
+    response is missing some lines (a common signal that the marketing
+    color name was used), the tool fetches the SDL CSV over SFTP,
+    resolves each missing line's mainframe color, and retries once
+    with the resolved values. Read-only.
     """
 
     coerced = [_coerce_pricing_line(ln) for ln in lines]
     if not coerced:
         raise SanMarConfigError("at least one pricing line is required")
     client = _client(credentials)
-    result: PricingResult = client.get_pricing(lines=coerced)
+
+    try:
+        result: PricingResult = client.get_pricing(lines=coerced)
+    except SanMarAPIError:
+        if not auto_resolve_color:
+            raise
+        resolved = _resolve_pricing_lines(coerced, ftp_credentials)
+        if resolved == coerced:
+            raise
+        result = client.get_pricing(lines=resolved)
+        return to_dict(result)
+
+    if auto_resolve_color and len(result.items) < len(coerced):
+        returned_keys = {(_n(it.style), _n(it.color), _n(it.size)) for it in result.items}
+        missing = [
+            ln
+            for ln in coerced
+            if (_n(ln.style), _n(ln.color), _n(ln.size)) not in returned_keys
+        ]
+        if missing:
+            resolved_missing = _resolve_pricing_lines(missing, ftp_credentials)
+            if resolved_missing != missing:
+                retry = client.get_pricing(lines=resolved_missing)
+                result.items.extend(retry.items)
     return to_dict(result)
+
+
+def _n(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
+def _resolve_pricing_lines(
+    lines: list[PricingLine],
+    ftp_credentials: SanMarFTPCredentials | None,
+) -> list[PricingLine]:
+    out: list[PricingLine] = []
+    for ln in lines:
+        mainframe = _resolve_mainframe_color_or_none(
+            ln.style, ln.color, ln.size, ftp_credentials
+        )
+        if mainframe and mainframe != ln.color:
+            out.append(PricingLine(style=ln.style, color=mainframe, size=ln.size))
+        else:
+            out.append(ln)
+    return out
 
 
 def sanmar_validate_cart(
@@ -298,12 +425,99 @@ def sanmar_cancel_order(
 
 
 # ---------------------------------------------------------------------------
+# PDF + FTP utility tools
+# ---------------------------------------------------------------------------
+
+
+def sanmar_parse_po_pdf(
+    pdf_path: str | None = None,
+    *,
+    pdf_bytes: bytes | None = None,
+) -> dict[str, Any]:
+    """Extract a draft purchase order from a PDF.
+
+    Accepts either ``pdf_path`` (filesystem path) or ``pdf_bytes``
+    (raw PDF content). Returns a :class:`ParsedPurchaseOrder` dict
+    that the agent should present to the user for approval before
+    converting it into a draft and submitting via
+    :func:`sanmar_create_purchase_order`.
+
+    The parser uses heuristics, not structured extraction. Fields it
+    cannot confidently identify are left blank and listed in
+    ``warnings``. Read-only.
+    """
+
+    if pdf_path is None and pdf_bytes is None:
+        raise SanMarConfigError("either pdf_path or pdf_bytes is required")
+    if pdf_path is not None and pdf_bytes is not None:
+        raise SanMarConfigError("pass exactly one of pdf_path or pdf_bytes")
+    source: str | bytes = pdf_bytes if pdf_bytes is not None else pdf_path  # type: ignore[assignment]
+    parsed: ParsedPurchaseOrder = parse_purchase_order_pdf(source)
+    payload = to_dict(parsed)
+    # Drop the raw text from the default response — it's large; the
+    # caller can re-parse if needed. Keep it accessible via
+    # parse_purchase_order_pdf() directly.
+    payload.pop("raw_text", None)
+    payload["draft_for_submit"] = (
+        to_purchase_order_draft(parsed) if parsed.po_number and parsed.lines else None
+    )
+    return payload
+
+
+def sanmar_lookup_mainframe_color(
+    style: str,
+    color: str,
+    size: str | None = None,
+    *,
+    ftp_credentials: SanMarFTPCredentials | None = None,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    """Resolve a marketing color name to SanMar's mainframe color code.
+
+    SanMar's web-service inventory and pricing endpoints query against
+    the *mainframe* color, not the marketing ``COLOR_NAME``. This tool
+    downloads ``SanMarPDD/SanMar_SDL_N.csv`` from SanMar's SFTP server
+    (``ftp.sanmar.com:2200`` over SFTP), caches it locally for 24h,
+    and returns the matching ``SANMAR_MAINFRAME_COLOR`` for the given
+    ``style`` plus marketing ``color`` (and optional ``size``).
+
+    Returns a :class:`MainframeColorResolution` with status:
+
+    - ``matched``: exactly one mainframe color found.
+    - ``ambiguous``: multiple matches — agent should ask the user
+      which color they meant.
+    - ``not_found``: nothing matched.
+
+    Read-only. Requires FTP credentials (env: ``SANMAR_FTP_PASSWORD``
+    plus customer-number username).
+    """
+
+    if not style:
+        raise SanMarConfigError("style is required")
+    if not color:
+        raise SanMarConfigError("color is required")
+    try:
+        result: MainframeColorResolution = lookup_mainframe_color(
+            style=style,
+            color=color,
+            size=size,
+            credentials=ftp_credentials,
+            force_refresh=force_refresh,
+        )
+    except SanMarFTPConfigError as exc:
+        raise SanMarConfigError(str(exc)) from exc
+    return to_dict(result)
+
+
+# ---------------------------------------------------------------------------
 # Public API surface
 # ---------------------------------------------------------------------------
 
 
 __all__ = [
+    "PDFParseError",
     "SanMarError",
+    "SanMarFTPError",
     "sanmar_search_products",
     "sanmar_check_inventory",
     "sanmar_get_pricing",
@@ -312,4 +526,6 @@ __all__ = [
     "sanmar_check_order_status",
     "sanmar_get_tracking",
     "sanmar_cancel_order",
+    "sanmar_parse_po_pdf",
+    "sanmar_lookup_mainframe_color",
 ]

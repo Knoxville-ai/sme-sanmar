@@ -10,6 +10,18 @@ The skill is self-contained: it does not depend on Odoo, Knoxville's
 XML parsing and SOAP envelope construction uses the Python stdlib
 `xml.etree.ElementTree` — no `lxml` install is required at runtime.
 
+Two optional dependencies enable the PDF and FTP tools:
+
+- `pypdf>=4.0` — required for `sanmar_parse_po_pdf` (PDF text
+  extraction). Install if your agent processes uploaded PO PDFs.
+- `paramiko>=3.0` — required for `sanmar_lookup_mainframe_color` and
+  the auto-resolve fallback in `sanmar_check_inventory` /
+  `sanmar_get_pricing`. Install if your agent needs to translate
+  marketing colors into SanMar mainframe color codes.
+
+Both are imported lazily, so the skill still loads if they're absent;
+the affected tools raise a clear error pointing at `pip install`.
+
 ## When to use this skill
 
 Invoke a `sanmar_*` tool when the caller's request involves any of:
@@ -24,6 +36,11 @@ Invoke a `sanmar_*` tool when the caller's request involves any of:
 - Polling SanMar order status, shipment notifications, or tracking
   numbers tied to a PO.
 - Cancelling a previously submitted SanMar order.
+- Parsing an uploaded PDF purchase order into a structured draft the
+  user can review and approve before submission.
+- Translating a marketing color name (e.g. "Athletic Heather") into
+  SanMar's mainframe color code (e.g. "ATHHTHR") when an inventory
+  or pricing call rejects the consumer-facing color.
 
 Do **not** use this skill for unrelated apparel vendors (S&S, Alpha,
 etc.), and never invent SanMar request shapes from prose — call the
@@ -44,6 +61,8 @@ All callables live in `sanmar_tools.py` and are described in
 | `sanmar_check_order_status` | read-only | implemented |
 | `sanmar_get_tracking` | read-only | implemented |
 | `sanmar_cancel_order` | **high — external write** | stub (SanMar does not expose a public cancel endpoint) |
+| `sanmar_parse_po_pdf` | read-only (local file) | implemented |
+| `sanmar_lookup_mainframe_color` | read-only (FTP) | implemented |
 
 Every tool takes typed inputs (see `schemas.py`), returns a structured
 JSON-serializable dict, and raises `SanMarError` subclasses for
@@ -61,28 +80,133 @@ PromoStandards (order shipment notification) uses `shar:id` and
 `shar:password` in the SOAP header objects, typically the same
 username/password.
 
-The skill never hardcodes credentials. Two ways to provide them:
+The skill never hardcodes credentials. Credentials are **not** present
+in the environment by default — the agent is expected to elicit them
+from the user when first needed and pass them explicitly into every
+tool call.
 
-1. **Environment variables** (recommended at runtime):
+### Agent credential flow
 
-   ```bash
-   SANMAR_CUSTOMER_NUMBER=...
-   SANMAR_USERNAME=...
-   SANMAR_PASSWORD=...
-   SANMAR_ENV=production    # or "development" — flips PO endpoint to test-ws
-   ```
-
-2. **Explicit credentials object** passed into every tool call:
+1. **First call in a session:** call the tool without credentials. If
+   none are configured the tool raises `SanMarConfigError`.
+2. The agent treats that error as a `needs_clarification` and asks the
+   user for the missing fields (customer number, username, password,
+   and — for FTP-backed tools — the FTP password).
+3. The agent **remembers** the values for the rest of the session and
+   passes them explicitly into every subsequent call:
 
    ```python
-   from skills.sanmar.schemas import SanMarCredentials
-   creds = SanMarCredentials(customer_number=..., username=..., password=...)
-   sanmar_check_inventory(style="PC55", color="Black", size="L", credentials=creds)
-   ```
+   from skills.sanmar.schemas import SanMarCredentials, SanMarFTPCredentials
 
-If credentials are missing, the skill raises `SanMarConfigError` and the
-caller agent must respond with `needs_clarification` and request the
-credentials from the operator. Do not guess defaults.
+   ws_creds = SanMarCredentials(
+       customer_number="123456",
+       username="api_user@example.com",
+       password="...",
+       environment="production",   # or "development" for the test PO endpoint
+   )
+   ftp_creds = SanMarFTPCredentials(
+       username="123456",          # SanMar customer number
+       password="...",             # FTP-specific password (NOT the web-services password)
+   )
+
+   sanmar_check_inventory(
+       style="PC55", color="Athletic Heather", size="L",
+       credentials=ws_creds,
+       ftp_credentials=ftp_creds,
+   )
+   ```
+4. The agent may **optionally** persist credentials by exporting them
+   as environment variables (see below) so they survive across
+   sessions. This is a convenience, not the default contract — the
+   tool always prefers the explicitly-passed credentials object when
+   one is provided.
+
+Do not guess defaults, do not invent values, and do not reuse
+credentials across tenants.
+
+### Optional environment-variable cache
+
+If the agent or operator chooses to persist credentials between
+sessions, the skill recognizes these vars as a fallback when no
+explicit `credentials=` is passed:
+
+```bash
+# Web services (SOAP + PromoStandards)
+SANMAR_CUSTOMER_NUMBER=...
+SANMAR_USERNAME=...
+SANMAR_PASSWORD=...
+SANMAR_ENV=production    # or "development" — flips PO endpoint to test-ws
+
+# SFTP (SDL CSV download)
+SANMAR_FTP_USERNAME=<customer_number>   # defaults to SANMAR_CUSTOMER_NUMBER
+SANMAR_FTP_PASSWORD=...
+SANMAR_FTP_HOST=ftp.sanmar.com           # optional override
+SANMAR_FTP_PORT=2200                     # optional override
+SANMAR_FTP_CACHE_DIR=/tmp/sme-sanmar-cache  # optional override
+```
+
+These are an **optional cache layer**. The supported runtime pattern
+is "agent collects creds from the user → agent passes them explicitly
+into every call."
+
+### FTP credentials (separate from web services)
+
+`sanmar_lookup_mainframe_color` and the auto-resolve fallback in
+`sanmar_check_inventory` / `sanmar_get_pricing` need SanMar SFTP
+access. Per SanMar's FTP Integration Guide v23.1, the server is
+`ftp.sanmar.com:2200` over **SFTP** (SSH), and FTP creds are issued
+separately from web-service creds — your `sanmar.com` username will
+*not* work on the FTP server. The agent must ask for the FTP
+password as a distinct credential.
+
+The SDL CSV (`SanMarPDD/SanMar_SDL_N.csv`) is cached locally for 24h
+(SanMar refreshes it nightly). Pass `force_refresh=True` to bypass the
+cache.
+
+## PDF purchase-order intake
+
+`sanmar_parse_po_pdf` accepts a PDF path or raw bytes and returns a
+best-effort `ParsedPurchaseOrder` with:
+
+- `po_number`, `order_date`, `ship_method`
+- `ship_to` (name/address/city/state/zip/email)
+- `lines[]` with `style`, `color`, `size`, `quantity`, `unit_price`
+- `warnings[]` listing fields the heuristics could not confidently
+  extract
+- `draft_for_submit` — a ready-to-pass `purchase_order` dict for
+  `sanmar_create_purchase_order`, populated only when the parse is
+  complete enough.
+
+The agent **must** show the parsed PO back to the user for approval
+before calling `sanmar_create_purchase_order`. Parsers cannot
+guarantee correctness across every PO layout — treat the output as a
+draft, not as authoritative.
+
+## Mainframe color resolution
+
+SanMar's inventory/pricing/PO endpoints query against the *mainframe*
+color (an abbreviated code like `ATHHTHR`), not the marketing
+`COLOR_NAME` shown in catalogs (`Athletic Heather`). When the agent
+queries with a marketing name, SanMar typically returns
+`Invalid style specified` or an empty response.
+
+Resolution flow:
+
+1. The agent receives a request that contains a marketing color name.
+2. It calls `sanmar_check_inventory` / `sanmar_get_pricing` with that
+   color.
+3. If SanMar errors out **or** returns an empty response, the tool
+   automatically:
+   - downloads `SanMarPDD/SanMar_SDL_N.csv` from the SFTP server (or
+     uses the cache),
+   - looks up the row matching `STYLE#`, `COLOR_NAME`, and `SIZE`,
+   - retries the call with the matching `SANMAR_MAINFRAME_COLOR`.
+4. If the agent wants explicit control, it can call
+   `sanmar_lookup_mainframe_color` directly and pass the resolved code
+   into subsequent calls.
+
+Disable the auto-retry by passing `auto_resolve_color=False` when the
+caller has already supplied a known mainframe code.
 
 ## Endpoints used
 

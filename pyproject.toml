@@ -14,11 +14,11 @@ requires-python = ">=3.11"
 license = { text = "Proprietary" }
 dependencies = [
     "agent-core>=0.2.0",
-    # Add SME-specific runtime deps here. `requests` is already pulled in
-    # by agent-core, so an HTTP-only SME usually needs nothing extra.
-    # Examples:
-    #   "stripe>=8.0",          # official Stripe SDK
-    #   "simple-salesforce>=1.12",
+    # PDF parsing for sanmar_parse_po_pdf.
+    "pypdf>=4.0",
+    # SFTP access for sanmar_lookup_mainframe_color and the
+    # mainframe-color auto-resolve fallback (ftp.sanmar.com:2200).
+    "paramiko>=3.0",
 ]
 
 [tool.setuptools.packages.find]

@@ -235,6 +235,109 @@ class CancelResult:
 
 
 # ---------------------------------------------------------------------------
+# PDF purchase-order parsing
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ParsedPOLine:
+    """One line item extracted from a PDF purchase order.
+
+    Fields are best-effort: parsing pipelines should populate every
+    field they can confidently identify. ``raw`` retains the source
+    text the line was extracted from so the caller can show context
+    when asking the user to approve the parse.
+    """
+
+    style: str
+    color: str
+    size: str
+    quantity: int
+    unit_price: float | None = None
+    description: str | None = None
+    raw: str | None = None
+
+
+@dataclass
+class ParsedShipTo:
+    name: str = ""
+    address1: str = ""
+    address2: str = ""
+    city: str = ""
+    state: str = ""
+    zip: str = ""
+    email: str = ""
+
+
+@dataclass
+class ParsedPurchaseOrder:
+    """Best-effort structured PO extracted from a PDF.
+
+    The agent must show this back to the user for approval before
+    handing it to :func:`sanmar_create_purchase_order`. ``warnings``
+    flags fields that could not be confidently extracted.
+    """
+
+    po_number: str | None = None
+    order_date: str | None = None
+    ship_to: ParsedShipTo = field(default_factory=ParsedShipTo)
+    ship_method: str | None = None
+    lines: list[ParsedPOLine] = field(default_factory=list)
+    notes: str = ""
+    warnings: list[str] = field(default_factory=list)
+    raw_text: str = ""
+    surface: str = "sanmar_pdf_parser"
+    operation: str = "parse_po_pdf"
+
+
+# ---------------------------------------------------------------------------
+# Mainframe color resolution (FTP SDL)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SanMarFTPCredentials:
+    """SFTP credentials for the SanMar FTP server.
+
+    SanMar issues these separately from web-service credentials. The
+    server is ``ftp.sanmar.com:2200`` over SFTP (SSH), and the username
+    is your SanMar customer number.
+    """
+
+    username: str
+    password: str
+    host: str = "ftp.sanmar.com"
+    port: int = 2200
+
+
+@dataclass
+class MainframeColorMatch:
+    style: str
+    requested_color: str
+    size: str | None
+    mainframe_color: str
+    color_name: str
+    inventory_key: str | None = None
+    size_index: str | None = None
+    unique_key: str | None = None
+
+
+@dataclass
+class MainframeColorResolution:
+    """Result of resolving a marketing color name to a mainframe color."""
+
+    status: str  # "matched" | "ambiguous" | "not_found"
+    style: str
+    requested_color: str
+    size: str | None = None
+    matches: list[MainframeColorMatch] = field(default_factory=list)
+    source_file: str = "SanMarPDD/SanMar_SDL_N.csv"
+    as_of: str | None = None  # ISO timestamp of cached file mtime
+    surface: str = "sanmar_ftp"
+    operation: str = "lookup_mainframe_color"
+
+
+# ---------------------------------------------------------------------------
 # JSON helpers
 # ---------------------------------------------------------------------------
 
