@@ -268,7 +268,7 @@ Tests use stubbed HTTP responses and never hit SanMar.
 
 ## Discovery
 
-Runtime agents should locate this skill by reading
-`skills/sanmar/SKILL.md` from the workspace root, then importing
-`skills.sanmar.sanmar_tools`. The legacy `sme_tools/example/tools.py`
-shim still works for callers that haven't migrated.
+Runtime agents locate this skill by reading
+`skills/sanmar/SKILL.md` from the workspace root and importing
+`skills.sanmar.sanmar_tools`. The role's `boot.md` already points
+agents here on first boot — no other shim or indirection exists.

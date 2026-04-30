@@ -12,9 +12,17 @@ It is designed to be called by other task agents and return structured, reliable
 
 ## Repository focus
 
-- `api_docs/` contains the SanMar integration documentation used at runtime by the agent.
-- `roles/example_sme/` contains role instructions now aligned to the SanMar SME mission.
-- `sme_tools/example/` is the tool surface that should implement SanMar operations.
+- `skills/sanmar/` is the canonical home for everything SanMar:
+  the skill contract (`SKILL.md`), tool catalog (`sanmar_tools.py`,
+  `tools.json`), typed schemas (`schemas.py`), the SOAP/PromoStandards
+  client (`sanmar_client.py`), the PDF PO parser (`pdf_parser.py`),
+  the SDL FTP color resolver (`ftp_resolver.py`), worked examples
+  (`examples.md`), and tests.
+- `api_docs/` contains the SanMar integration reference documentation
+  the agent reads before tool calls (auth, web services, FTP feeds,
+  purchase orders).
+- `roles/example_sme/` contains the role instructions that boot the
+  agent into the SanMar SME mission and point it at `skills/sanmar/`.
 
 ## Runtime expectations
 
