@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SanMar SME policies",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dry_run", "max_rows_per_call", "allow_writes"],
+  "properties": {
+    "dry_run": {
+      "type": "boolean",
+      "description": "When true, writes are logged but not sent to the upstream SaaS."
+    },
+    "max_rows_per_call": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000,
+      "description": "Upper bound on rows returned from any single tool call."
+    },
+    "allow_writes": {
+      "type": "boolean",
+      "description": "When false, any POST/PUT/DELETE call is refused."
+    }
+  }
+}

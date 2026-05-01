@@ -266,16 +266,24 @@ python -m pytest tests/
 
 Tests use stubbed HTTP responses and never hit SanMar.
 
-## Discovery
+## Discovery and registration
 
-Runtime agents locate this skill by reading
-`skills/sanmar/SKILL.md` from the workspace root. The canonical
-implementations live in `skills.sanmar.sanmar_tools`.
+This skill is registered with the agent through OpenClaw's native
+skill-discovery mechanism (`commands.nativeSkills: "auto"` in
+`~/.openclaw/openclaw.json`). agent-core's boot sequence runs
+`install_image_skills_to_workspace`, which scans
+`/srv/sme/skills/*/SKILL.md` and copies each match into
+`<workspace>/skills/<name>/`. OpenClaw picks the skill up from there
+on the next gateway start — no separate registration step is needed.
 
-agent-core's runtime introspects `sme_tools.example.tools` to register
-callables with the LLM, so a thin re-export shim at that path imports
-every public `sanmar_*` function from `skills.sanmar.sanmar_tools`.
-The shim contains no logic — when adding a new tool, implement it
-under `skills.sanmar` and add a one-line re-export to
-`sme_tools/example/tools.py`. Do **not** delete that file; without it
-the agent's tool catalog goes empty.
+The canonical Python implementations live in
+`skills.sanmar.sanmar_tools`. They are importable in skill
+subprocesses because `entrypoint.sh` adds `/srv/sme` to
+`PYTHONPATH`.
+
+To add a new tool:
+
+1. Implement it under `skills.sanmar.sanmar_tools`.
+2. Re-export it from `skills/sanmar/__init__.py`.
+3. Add an entry to `skills/sanmar/tools.json`.
+4. Document it in this file and in `examples.md`.
