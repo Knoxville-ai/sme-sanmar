@@ -1,5 +1,0 @@
-{
-  "dry_run": false,
-  "max_rows_per_call": 500,
-  "allow_writes": true
-}
