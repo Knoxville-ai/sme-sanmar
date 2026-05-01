@@ -1,8 +1,8 @@
 # Boot
 
-Your current working directory is the OpenClaw workspace; the whole SME
-repo is overlaid here on every boot. Prefer **workspace-relative paths**
-— the file tools are sandboxed to this dir.
+Your current working directory is the OpenClaw workspace. Your
+declared skills are installed under `skills/<name>/` — read each
+skill's `SKILL.md` first to learn its contract.
 
 On first boot:
 

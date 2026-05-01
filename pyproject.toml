@@ -3,13 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-# Rename to `sme-<your-saas>` (e.g. `sme-salesforce`) when forking this
-# template. The console matches `source_repo` to `knoxville-ai/<repo>`,
-# not to this name, so it's purely cosmetic — but keep it in sync with
-# the repo name and the role slug for sanity.
-name = "sme-template"
+name = "sme-sanmar"
 version = "0.1.0"
-description = "Class 2 SME agent template for the Knoxville AI platform"
+description = "Class 2 SanMar SME agent for the Knoxville AI platform"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 dependencies = [
@@ -23,4 +19,4 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["skills*", "sme_tools*"]
+include = ["skills*"]
