@@ -28,11 +28,15 @@ Write (HIGH-RISK):
 - `sanmar_create_purchase_order(purchase_order, *, confirm=False, credentials)`
 - `sanmar_cancel_order(...)` — stub; SanMar has no public cancel endpoint.
 
-Credentials:
+Credentials (plain string kwargs — the wrappers build typed objects):
 
-- `SanMarCredentials(customer_number, username, password, environment="production")` for the SOAP/PromoStandards calls.
-- `SanMarFTPCredentials(username=customer_number, password=ftp_password)` for the SFTP-backed calls. The FTP password is **separate** from the web-services password.
-- The agent collects credentials from the user on first need, remembers them for the session, and passes them explicitly into every call.
+- Web services (SOAP/PromoStandards): pass `customer_number`,
+  `username`, `password`, and optionally `environment`
+  (`"production"` / `"development"`).
+- SFTP (SDL CSV): pass `customer_number` and `ftp_password`. The
+  FTP password is **separate** from the web-services password.
+- The agent collects credentials from the user on first need,
+  remembers them for the session, and passes them on every call.
 
 ## Default loop
 

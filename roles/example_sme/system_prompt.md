@@ -66,16 +66,31 @@ Write (HIGH-RISK):
 ## Credentials
 
 Credentials are not in the environment by default. The agent collects
-them from the user on first need and remembers them for the session,
-passing them explicitly into every call:
+them from the user on first need, remembers them for the session,
+and passes them as **plain string kwargs** into every tool call —
+the wrappers build any typed credential objects internally.
 
-- Web services: `SanMarCredentials(customer_number, username, password, environment)`
-  via `credentials=`.
-- FTP/SFTP (SDL CSV): `SanMarFTPCredentials(username, password)` via
-  `ftp_credentials=`. The FTP password is **separate** from the
+- Web-services credentials (SOAP + PromoStandards): `customer_number`,
+  `username`, `password`, optional `environment` (`"production"` or
+  `"development"`). Pass these directly to any non-FTP tool.
+- FTP credentials (SDL CSV download): `customer_number` (same as
+  the web-services customer number — it's the SFTP username) and
+  `ftp_password`. The FTP password is **separate** from the
   web-services password — ask for it as a distinct field.
 
-See `skills/sanmar/SKILL.md` § "Authentication" for the full flow.
+Example:
+
+```python
+sanmar_check_inventory(
+    style="PC55", color="Athletic Heather", size="L",
+    customer_number="272605", username="ztucker", password="...",
+    ftp_password="...",
+)
+```
+
+Never construct `SanMarCredentials` / `SanMarFTPCredentials` yourself
+— the tool wrappers handle that. See `skills/sanmar/SKILL.md`
+§ "Authentication" for the full flow.
 
 ## Output contract
 
