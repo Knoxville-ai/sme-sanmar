@@ -23,4 +23,4 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["skills*"]
+include = ["skills*", "sme_tools*"]

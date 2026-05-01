@@ -269,6 +269,13 @@ Tests use stubbed HTTP responses and never hit SanMar.
 ## Discovery
 
 Runtime agents locate this skill by reading
-`skills/sanmar/SKILL.md` from the workspace root and importing
-`skills.sanmar.sanmar_tools`. The role's `boot.md` already points
-agents here on first boot — no other shim or indirection exists.
+`skills/sanmar/SKILL.md` from the workspace root. The canonical
+implementations live in `skills.sanmar.sanmar_tools`.
+
+agent-core's runtime introspects `sme_tools.example.tools` to register
+callables with the LLM, so a thin re-export shim at that path imports
+every public `sanmar_*` function from `skills.sanmar.sanmar_tools`.
+The shim contains no logic — when adding a new tool, implement it
+under `skills.sanmar` and add a one-line re-export to
+`sme_tools/example/tools.py`. Do **not** delete that file; without it
+the agent's tool catalog goes empty.
