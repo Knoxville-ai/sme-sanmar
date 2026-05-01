@@ -8,7 +8,7 @@ Mutable runtime scratchpad for this Class 2 SanMar SME.
 - Tool entrypoints: `skills.sanmar.sanmar_tools`
 - Tool manifest: `skills/sanmar/tools.json`
 - Examples: `skills/sanmar/examples.md`
-- API domain docs: `api_docs/auth_and_patterns.md`, `api_docs/web_services.md`, `api_docs/ftp_feeds.md`, `api_docs/purchase_orders.md`
+- API domain docs: `skills/sanmar/docs/auth_and_patterns.md`, `skills/sanmar/docs/web_services.md`, `skills/sanmar/docs/ftp_feeds.md`, `skills/sanmar/docs/purchase_orders.md`
 
 ## Tool catalog (common actions)
 
@@ -42,9 +42,9 @@ Credentials (plain string kwargs — the wrappers build typed objects):
 
 1. Validate sender is agent-only.
 2. Map request to one domain:
-   - Web services -> `api_docs/web_services.md`
-   - FTP feeds -> `api_docs/ftp_feeds.md`
-   - Purchase orders -> `api_docs/purchase_orders.md`
+   - Web services -> `skills/sanmar/docs/web_services.md`
+   - FTP feeds -> `skills/sanmar/docs/ftp_feeds.md`
+   - Purchase orders -> `skills/sanmar/docs/purchase_orders.md`
 3. Pick the corresponding `sanmar_*` tool from the catalog above.
 4. Check required inputs, credentials, and policy constraints
    (`dry_run`, `allow_writes`, `max_rows_per_call`).
