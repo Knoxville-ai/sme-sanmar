@@ -43,18 +43,28 @@ On first boot:
 
 ## Credentials
 
-Credentials are **not** in the environment by default. The first time
-a tool needs them, raise `SanMarConfigError` → respond with
-`needs_clarification` and ask the user. Then **remember** the values
-for the rest of the session and pass them explicitly into every
-subsequent call.
+Credentials are **not** in the environment by default. The first
+time a tool needs them, the runtime will surface a clarification
+request — ask the user, **remember** the values for the rest of
+the session, and pass them as **plain string kwargs** on every
+subsequent tool call. Do not construct dataclasses yourself; the
+wrappers build typed credential objects internally.
 
-- Web-services credentials (SOAP + PromoStandards):
-  `customer_number`, `username`, `password`. Pass as
-  `SanMarCredentials(...)` via the `credentials=` argument.
+- Web-services credentials (SOAP + PromoStandards): `customer_number`,
+  `username`, `password`, optional `environment`.
 - FTP credentials (SDL CSV download): the FTP password is **distinct
-  from** the sanmar.com / web-services password. Ask for it
-  separately. Username is the SanMar customer number. Pass as
-  `SanMarFTPCredentials(...)` via the `ftp_credentials=` argument.
+  from** the sanmar.com / web-services password — ask for it
+  separately. Pass `customer_number` (same as the web-services
+  customer number) and `ftp_password`.
+
+Example call:
+
+```python
+sanmar_get_pricing(
+    lines=[{"style": "CSF300", "color": "Safety Yellow", "size": "3XL"}],
+    customer_number="272605", username="ztucker", password="...",
+    ftp_password="...",
+)
+```
 
 Never invent credentials, never fall back to another vendor.
