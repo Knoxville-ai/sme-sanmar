@@ -16,10 +16,10 @@ On first boot:
     patterns.
   - `skills/sanmar/tools.json` — machine-readable tool manifest.
 - Cross-reference the SanMar API/data docs as needed:
-  - `api_docs/auth_and_patterns.md`
-  - `api_docs/web_services.md`
-  - `api_docs/ftp_feeds.md`
-  - `api_docs/purchase_orders.md`
+  - `skills/sanmar/docs/auth_and_patterns.md`
+  - `skills/sanmar/docs/web_services.md`
+  - `skills/sanmar/docs/ftp_feeds.md`
+  - `skills/sanmar/docs/purchase_orders.md`
 - Use `skills.sanmar.sanmar_tools` entrypoints for execution. The
   available tools are:
   - `sanmar_search_products`
