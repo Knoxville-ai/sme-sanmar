@@ -1,9 +1,10 @@
-# Pin to minor (0.2) instead of patch (0.2.x). The agent-core fan-out
-# workflow rebuilds this image whenever a v* tag is published, so we'll
-# pick up patch releases on the next rebuild without anyone editing this
-# file. Bump explicitly to 0.3 / 1.0 / etc. when a minor or major lands
-# (those are the changes likely to break the contract).
-FROM ghcr.io/knoxville-ai/agent-core:0.2
+# Pin to the agent-core minor that contains install_image_skills_to_workspace
+# (the per-skill install function that replaced overlay_image_files_to_workspace).
+# That landed in agent-core's v2.4.x line; the previous :0.2 pin still resolves
+# to the pre-merge image and the agent boots with the old overlay code, so the
+# SME's skills/sanmar/ tree never gets registered as an OpenClaw native skill.
+# Re-pin explicitly when a future minor (2.5 / 3.0) is published.
+FROM ghcr.io/knoxville-ai/agent-core:2.4
 
 # Install SME-specific Python deps on top of the agent-core base image.
 # Listed explicitly (not via `pip install .`) so we don't disturb the
