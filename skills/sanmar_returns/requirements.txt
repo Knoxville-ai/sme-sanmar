@@ -1,0 +1,8 @@
+# Runtime dependencies for the sanmar_returns skill.
+#
+# The skill is expected to run inside a class-2 SME container that has
+# Playwright already available — this file pins the minimum versions
+# the page objects assume. Browser binaries (Chromium) are installed
+# separately via `playwright install chromium`.
+
+playwright>=1.45,<2.0
