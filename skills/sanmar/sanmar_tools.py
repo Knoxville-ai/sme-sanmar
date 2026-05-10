@@ -8,6 +8,14 @@ Read-only tools are clearly distinguished from side-effecting tools
 (``sanmar_create_purchase_order``, ``sanmar_cancel_order``). The two
 write tools require ``confirm=True`` and otherwise return a dry-run
 preview without contacting SanMar.
+
+Each LLM-facing function accepts BOTH typed credential dataclasses
+(``credentials``, ``ftp_credentials``) AND plain-string kwargs
+(``customer_number``, ``username``, ``password``, ``environment``,
+``ftp_password``). The plain-string form is what the role's BOOT.md /
+SOUL.md instruct the agent to pass on every call; the typed form is
+preserved for direct Python callers (tests, sibling skills). When both
+are provided, the typed dataclass wins.
 """
 
 from __future__ import annotations
@@ -66,6 +74,45 @@ def _client(credentials: SanMarCredentials | None) -> SanMarClient:
     return SanMarClient(credentials=credentials)
 
 
+def _build_creds_if_needed(
+    credentials: SanMarCredentials | None,
+    ftp_credentials: SanMarFTPCredentials | None,
+    *,
+    customer_number: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    environment: str = "production",
+    ftp_password: str | None = None,
+) -> tuple[SanMarCredentials | None, SanMarFTPCredentials | None]:
+    """Translate plain-string kwargs into typed credential dataclasses.
+
+    Each LLM-facing tool wrapper accepts plain string kwargs that match
+    what the role's BOOT.md / SOUL.md tell the agent to pass on every
+    call. This helper builds the typed credential objects when they
+    aren't already supplied. Internal Python callers that prefer the
+    typed form pass ``credentials=`` / ``ftp_credentials=`` directly —
+    those win over the plain strings when both are present.
+
+    SanMarFTPCredentials uses the SanMar customer number as its
+    ``username`` and the FTP password (separate from the web-services
+    password) as its ``password``.
+    """
+
+    if credentials is None and (customer_number or username or password):
+        credentials = SanMarCredentials(
+            customer_number=customer_number or "",
+            username=username or "",
+            password=password or "",
+            environment=environment,
+        )
+    if ftp_credentials is None and (customer_number or ftp_password):
+        ftp_credentials = SanMarFTPCredentials(
+            username=customer_number or "",
+            password=ftp_password or "",
+        )
+    return credentials, ftp_credentials
+
+
 def _coerce_pricing_line(value: Any) -> PricingLine:
     if isinstance(value, PricingLine):
         return value
@@ -119,6 +166,11 @@ def sanmar_search_products(
     size: str | None = None,
     *,
     credentials: SanMarCredentials | None = None,
+    customer_number: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    environment: str = "production",
+    ftp_password: str | None = None,
 ) -> dict[str, Any]:
     """Catalog discovery for a SanMar style.
 
@@ -129,6 +181,11 @@ def sanmar_search_products(
 
     if not style:
         raise SanMarConfigError("style is required")
+    credentials, _ = _build_creds_if_needed(
+        credentials, None,
+        customer_number=customer_number, username=username, password=password,
+        environment=environment, ftp_password=ftp_password,
+    )
     client = _client(credentials)
     result: ProductSearchResult = client.search_products(style=style, color=color, size=size)
     return to_dict(result)
@@ -167,6 +224,11 @@ def sanmar_check_inventory(
     credentials: SanMarCredentials | None = None,
     ftp_credentials: SanMarFTPCredentials | None = None,
     auto_resolve_color: bool = True,
+    customer_number: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    environment: str = "production",
+    ftp_password: str | None = None,
 ) -> dict[str, Any]:
     """Live inventory for a single style/color/size at SanMar warehouses.
 
@@ -181,6 +243,11 @@ def sanmar_check_inventory(
 
     if not (style and color and size):
         raise SanMarConfigError("style, color, and size are all required")
+    credentials, ftp_credentials = _build_creds_if_needed(
+        credentials, ftp_credentials,
+        customer_number=customer_number, username=username, password=password,
+        environment=environment, ftp_password=ftp_password,
+    )
     client = _client(credentials)
 
     try:
@@ -222,6 +289,11 @@ def sanmar_get_pricing(
     credentials: SanMarCredentials | None = None,
     ftp_credentials: SanMarFTPCredentials | None = None,
     auto_resolve_color: bool = True,
+    customer_number: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    environment: str = "production",
+    ftp_password: str | None = None,
 ) -> dict[str, Any]:
     """Customer-specific (`myPrice`) and tier pricing for one or more lines.
 
@@ -240,6 +312,11 @@ def sanmar_get_pricing(
     coerced = [_coerce_pricing_line(ln) for ln in lines]
     if not coerced:
         raise SanMarConfigError("at least one pricing line is required")
+    credentials, ftp_credentials = _build_creds_if_needed(
+        credentials, ftp_credentials,
+        customer_number=customer_number, username=username, password=password,
+        environment=environment, ftp_password=ftp_password,
+    )
     client = _client(credentials)
 
     try:
@@ -292,6 +369,11 @@ def sanmar_validate_cart(
     purchase_order: Any,
     *,
     credentials: SanMarCredentials | None = None,
+    customer_number: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    environment: str = "production",
+    ftp_password: str | None = None,
 ) -> dict[str, Any]:
     """Pre-submit validation for a draft PO.
 
@@ -301,6 +383,11 @@ def sanmar_validate_cart(
     """
 
     draft = _coerce_po_draft(purchase_order)
+    credentials, _ = _build_creds_if_needed(
+        credentials, None,
+        customer_number=customer_number, username=username, password=password,
+        environment=environment, ftp_password=ftp_password,
+    )
     client = _client(credentials)
     result: CartValidationResult = client.pre_submit_po(draft)
     return to_dict(result)
@@ -310,6 +397,11 @@ def sanmar_check_order_status(
     po_number: str,
     *,
     credentials: SanMarCredentials | None = None,
+    customer_number: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    environment: str = "production",
+    ftp_password: str | None = None,
 ) -> dict[str, Any]:
     """Look up SanMar's sales-order number and shipment progress for a PO.
 
@@ -319,6 +411,11 @@ def sanmar_check_order_status(
 
     if not po_number:
         raise SanMarConfigError("po_number is required")
+    credentials, _ = _build_creds_if_needed(
+        credentials, None,
+        customer_number=customer_number, username=username, password=password,
+        environment=environment, ftp_password=ftp_password,
+    )
     client = _client(credentials)
     result: OrderStatusResult = client.get_order_status(po_number=po_number)
     return to_dict(result)
@@ -328,6 +425,11 @@ def sanmar_get_tracking(
     po_number: str,
     *,
     credentials: SanMarCredentials | None = None,
+    customer_number: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    environment: str = "production",
+    ftp_password: str | None = None,
 ) -> dict[str, Any]:
     """Tracking numbers and normalized carriers for a SanMar PO.
 
@@ -337,6 +439,11 @@ def sanmar_get_tracking(
 
     if not po_number:
         raise SanMarConfigError("po_number is required")
+    credentials, _ = _build_creds_if_needed(
+        credentials, None,
+        customer_number=customer_number, username=username, password=password,
+        environment=environment, ftp_password=ftp_password,
+    )
     client = _client(credentials)
     result: TrackingResult = client.get_tracking(po_number=po_number)
     return to_dict(result)
@@ -352,6 +459,11 @@ def sanmar_create_purchase_order(
     *,
     confirm: bool = False,
     credentials: SanMarCredentials | None = None,
+    customer_number: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    environment: str = "production",
+    ftp_password: str | None = None,
 ) -> dict[str, Any]:
     """Submit a SanMar PO. **HIGH-RISK external write.**
 
@@ -371,6 +483,11 @@ def sanmar_create_purchase_order(
     """
 
     draft = _coerce_po_draft(purchase_order)
+    credentials, _ = _build_creds_if_needed(
+        credentials, None,
+        customer_number=customer_number, username=username, password=password,
+        environment=environment, ftp_password=ftp_password,
+    )
     client = _client(credentials)
 
     if not confirm:
@@ -395,6 +512,11 @@ def sanmar_cancel_order(
     *,
     confirm: bool = False,
     credentials: SanMarCredentials | None = None,  # noqa: ARG001 — interface stable
+    customer_number: str | None = None,  # noqa: ARG001 — interface stable
+    username: str | None = None,  # noqa: ARG001 — interface stable
+    password: str | None = None,  # noqa: ARG001 — interface stable
+    environment: str = "production",  # noqa: ARG001 — interface stable
+    ftp_password: str | None = None,  # noqa: ARG001 — interface stable
 ) -> dict[str, Any]:
     """Cancel a SanMar PO. **HIGH-RISK external write — STUB.**
 
@@ -471,6 +593,8 @@ def sanmar_lookup_mainframe_color(
     *,
     ftp_credentials: SanMarFTPCredentials | None = None,
     force_refresh: bool = False,
+    customer_number: str | None = None,
+    ftp_password: str | None = None,
 ) -> dict[str, Any]:
     """Resolve a marketing color name to SanMar's mainframe color code.
 
@@ -496,6 +620,10 @@ def sanmar_lookup_mainframe_color(
         raise SanMarConfigError("style is required")
     if not color:
         raise SanMarConfigError("color is required")
+    _, ftp_credentials = _build_creds_if_needed(
+        None, ftp_credentials,
+        customer_number=customer_number, ftp_password=ftp_password,
+    )
     try:
         result: MainframeColorResolution = lookup_mainframe_color(
             style=style,
